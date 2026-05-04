@@ -1,0 +1,251 @@
+/**
+ * Нижняя мобильная навигация и сайдбар — логика из design/стиль5.txt и design/стиль4.txt
+ * (классы UExZ / wivc / kaT0 / Hoxy / w6cw и блок .kXga .NPkb).
+ */
+
+/* ——— Мобильный бар (UExZ → itd-mnav-root) ——— */
+/* display задаётся в JSX (flex + lg:!hidden), иначе перебивает Tailwind lg:hidden */
+.itd-mnav-root {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  background: var(--nav-gradient);
+  pointer-events: none;
+  align-items: flex-end;
+  gap: 12px;
+  transform: translateY(0);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.itd-mnav-root.itd-mnav-root--hidden {
+  transform: translateY(100%);
+}
+
+.itd-mnav-bar {
+  position: relative;
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  overflow: visible;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-radius: 32px;
+  pointer-events: auto;
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Область вкладок со скользящим pill (без кнопки «Ивент») */
+.itd-mnav-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  display: flex;
+  align-items: stretch;
+}
+
+.itd-mnav-pill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: var(--tab-active-bg);
+  border-radius: 26px;
+  transition:
+    left 0.2s cubic-bezier(0.5, 0, 0, 1),
+    width 0.2s cubic-bezier(0.5, 0, 0, 1),
+    opacity 0.15s ease;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.itd-mnav-pill.itd-mnav-pill--hidden {
+  opacity: 0;
+}
+
+.itd-mnav-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s ease;
+}
+
+.itd-mnav-tab:hover {
+  color: var(--text-primary);
+}
+
+.itd-mnav-tab.itd-mnav-tab--active {
+  color: var(--text-primary);
+}
+
+.itd-mnav-tab-label {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.itd-mnav-event {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: none;
+  border-radius: 32px;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-elevated);
+  transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.itd-mnav-event:hover {
+  background: var(--block-bg-secondary);
+}
+
+.itd-mnav-event:active {
+  transform: scale(0.97);
+}
+
+.itd-mnav-event-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.itd-mnav-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.itd-mnav-icon--glow {
+  animation: itd-mnav-event-glow 2s ease-in-out infinite;
+}
+
+@keyframes itd-mnav-event-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(144, 162, 255, 0.2));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgb(144, 162, 255));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itd-mnav-root,
+  .itd-mnav-pill,
+  .itd-mnav-tab,
+  .itd-mnav-icon--glow {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.itd-mnav-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background-color: var(--accent-like);
+  border-radius: 8px;
+}
+
+/* ——— Десктопный сайдбар (.kXga .NPkb) ——— */
+.itd-sidebar {
+  background-color: var(--bg-primary);
+  border-right: 1px solid var(--border-color);
+}
+
+.itd-sidebar-navbtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  text-align: left;
+}
+
+.itd-sidebar-navbtn:hover {
+  background-color: var(--block-bg);
+  color: var(--text-primary);
+}
+
+.itd-sidebar-navbtn--active {
+  background-color: var(--block-bg);
+  color: var(--text-primary);
+}
+
+.itd-sidebar-event-icon {
+  animation: itd-mnav-event-glow 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itd-sidebar-event-icon {
+    animation: none;
+  }
+}
+
+.itd-sidebar-footer {
+  border-top: 1px solid var(--border-color);
+}
+
+.itd-sidebar-brand {
+  color: var(--text-primary);
+}
+
+.itd-sidebar-brand-muted {
+  color: var(--text-secondary);
+}
+
+.itd-sidebar-star {
+  color: #fbbf24;
+}
+
+/* emoji-mart: инлайн-эмодзи в постах / опросах */
+em-emoji {
+  display: inline-block;
+  vertical-align: -0.12em;
+}

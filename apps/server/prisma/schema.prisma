@@ -1,13 +1,51 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Aegis — схема для локальной разработки (SQLite). Для продакена задайте DATABASE_URL на PostgreSQL.
+// https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
+}
+
+model User {
+  id           String       @id @default(cuid())
+  username     String       @unique
+  passwordHash String?
+  createdAt    DateTime     @default(now())
+  messages     Message[]
+  memberships  ChatMember[]
+}
+
+model Chat {
+  id        String       @id @default(cuid())
+  name      String?
+  createdAt DateTime     @default(now())
+  members   ChatMember[]
+  messages  Message[]
+}
+
+model ChatMember {
+  id     String @id @default(cuid())
+  chatId String
+  userId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+}
+
+/// Сообщение в хранилище: только шифротекст + IV (модель E2EE на уровне приложения).
+model Message {
+  id         String   @id @default(cuid())
+  chatId     String
+  senderId   String
+  ciphertext String
+  iv         String
+  createdAt  DateTime @default(now())
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender     User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
 }

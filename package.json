@@ -4,11 +4,21 @@
   "private": true,
   "description": "E2EE Messenger Monorepo",
   "scripts": {
+    "build:shared": "pnpm --filter @aegis/shared build",
+    "build": "pnpm run build:shared && pnpm --filter @aegis/server build && pnpm --filter @aegis/client build",
+    "dev": "pnpm run build:shared && concurrently -n client,server -c blue,green \"pnpm client:dev\" \"pnpm server:dev\"",
+    "db:generate": "pnpm --filter @aegis/server exec prisma generate",
+    "db:push": "pnpm --filter @aegis/server exec prisma db push",
     "server:dev": "pnpm --filter @aegis/server dev",
-    "client:dev": "pnpm --filter @aegis/client dev"
+    "client:dev": "pnpm --filter @aegis/client dev",
+    "lint": "pnpm --filter @aegis/client lint"
   },
   "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/engines", "better-sqlite3", "esbuild", "prisma"]
+  },
   "devDependencies": {
+    "concurrently": "^9.2.0",
     "typescript": "^6.0.3"
   }
 }

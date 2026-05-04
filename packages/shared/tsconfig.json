@@ -1,12 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true, // ОБЯЗАТЕЛЬНО для references
-    "declaration": true, // Генерация файлов типов
-    "declarationMap": true, // Для удобного перехода к коду (Ctrl+Click)
-    "noEmit": false, // Выключаем запрет на генерацию файлов
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": false,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": false
   },
   "include": ["src"]
 }
