@@ -2,6 +2,7 @@ import {
   IconBell,
   IconEvent,
   IconFeed,
+  IconMessages,
   IconSearch,
   IconUser,
 } from "@/components/messenger/nav-icons";
@@ -10,17 +11,12 @@ import {
   useAppNavStore,
   type AppMainScreen,
 } from "@/stores/app-nav-store";
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useRef, type ReactNode } from "react";
 
 const TABS = [
   { id: "feed", label: "Лента" },
   { id: "search", label: "Поиск" },
+  { id: "messages", label: "Чаты" },
   { id: "alerts", label: "Уведомления" },
   { id: "profile", label: "Профиль" },
 ] as const;
@@ -36,6 +32,8 @@ function tabIcon(id: TabId): ReactNode {
       return <IconSearch className={cls} width={24} height={24} />;
     case "alerts":
       return <IconBell className={cls} width={24} height={24} />;
+    case "messages":
+      return <IconMessages className={cls} width={24} height={24} />;
     case "profile":
       return <IconUser className={cls} width={24} height={24} />;
     default:
@@ -53,6 +51,8 @@ function screenToTab(screen: AppMainScreen): TabId {
       return "search";
     case "feed":
       return "feed";
+    case "messages":
+      return "messages";
     case "alerts":
       return "alerts";
     case "profile":
@@ -65,40 +65,7 @@ export function MobileNav() {
   const screen = useAppNavStore((s) => s.screen);
   const setScreen = useAppNavStore((s) => s.setScreen);
   const active = screenToTab(screen);
-  const trackRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const [pill, setPill] = useState({ left: 0, width: 0, ready: false });
-
-  const measure = useCallback(() => {
-    const track = trackRef.current;
-    const idx = TABS.findIndex((t) => t.id === active);
-    const btn = tabRefs.current[idx];
-    if (!track || !btn) {
-      setPill((p) => ({ ...p, ready: false }));
-      return;
-    }
-    const tr = track.getBoundingClientRect();
-    const br = btn.getBoundingClientRect();
-    setPill({
-      left: br.left - tr.left,
-      width: br.width,
-      ready: true,
-    });
-  }, [active]);
-
-  useLayoutEffect(() => {
-    measure();
-  }, [measure]);
-
-  useLayoutEffect(() => {
-    const track = trackRef.current;
-    if (!track) {
-      return;
-    }
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(track);
-    return () => ro.disconnect();
-  }, [measure]);
 
   return (
     <div
@@ -116,15 +83,7 @@ export function MobileNav() {
           </span>
         </button>
 
-        <div ref={trackRef} className="itd-mnav-track">
-          <div
-            className={cn("itd-mnav-pill", !pill.ready && "itd-mnav-pill--hidden")}
-            style={{
-              left: pill.left,
-              width: pill.width,
-            }}
-            aria-hidden
-          />
+        <div className="itd-mnav-track">
           {TABS.map((tab, i) => (
             <button
               key={tab.id}
@@ -149,6 +108,9 @@ export function MobileNav() {
                     break;
                   case "alerts":
                     setScreen("alerts");
+                    break;
+                  case "messages":
+                    setScreen("messages");
                     break;
                   default:
                     break;

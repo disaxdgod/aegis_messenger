@@ -37,7 +37,7 @@ const textInitial = {
 };
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
-  username: "disaxdgod",
+  username: "",
   ...textInitial,
   presence: "online",
   avatarObjectUrl: null,
@@ -82,7 +82,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       URL.revokeObjectURL(prevB);
     }
     set({
-      username: "disaxdgod",
+      username: "",
       ...textInitial,
       presence: "online",
       avatarObjectUrl: null,

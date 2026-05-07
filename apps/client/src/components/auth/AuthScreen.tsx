@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AuthFieldErrors } from "@/stores/auth-form-store";
 import { useAuthFormStore } from "@/stores/auth-form-store";
+import { useProfileStore } from "@/stores/profile-store";
 import { useSessionStore } from "@/stores/session-store";
 import { cn } from "@/lib/utils";
 import type { FormEvent } from "react";
@@ -72,6 +73,7 @@ export function AuthScreen() {
   const clearFieldError = useAuthFormStore((s) => s.clearFieldError);
   const clearAllErrors = useAuthFormStore((s) => s.clearAllErrors);
   const signIn = useSessionStore((s) => s.signIn);
+  const setUsername = useProfileStore((s) => s.setUsername);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -114,6 +116,7 @@ export function AuthScreen() {
       return;
     }
 
+    setUsername(login.trim());
     signIn(
       mode === "sign-up"
         ? {

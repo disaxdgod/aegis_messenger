@@ -25,6 +25,7 @@ export function MessengerSidebar() {
   const profileActive = screen === "profile";
   const feedActive = screen === "feed";
   const searchActive = screen === "search" || screen === "hashtag-feed";
+  const messagesActive = screen === "messages";
   const alertsActive = screen === "alerts";
 
   return (
@@ -80,7 +81,16 @@ export function MessengerSidebar() {
           <IconSearch />
           Поиск
         </button>
-        <button type="button" className={navItem}>
+        <button
+          type="button"
+          onClick={() => setScreen("messages")}
+          className={cn(
+            navItem,
+            messagesActive &&
+              "rounded-full bg-[#272727] text-white shadow-inner shadow-black/20 hover:bg-[#2f2f2f] hover:text-white",
+          )}
+          aria-current={messagesActive ? "page" : undefined}
+        >
           <IconMessages />
           Сообщения
         </button>

@@ -6,6 +6,7 @@ export type AppMainScreen =
   | "search"
   | "hashtag-feed"
   | "feed"
+  | "messages"
   | "alerts";
 
 type AppNavState = {

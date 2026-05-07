@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 type EmEmojiAppleProps = {
   native: string;
   className?: string;
+  /** Размер для атрибута emoji-mart `size` (например `1.5em` в чате). */
+  emojiMartSize?: string;
 };
 
 /**
@@ -12,7 +14,7 @@ type EmEmojiAppleProps = {
  * Создаём `em-emoji` через DOM: так гарантированно применяются `native` и `set`,
  * иначе React иногда оставляет системный шрифт (Segoe UI Emoji на Windows).
  */
-export function EmEmojiApple({ native, className }: EmEmojiAppleProps) {
+export function EmEmojiApple({ native, className, emojiMartSize = "1.15em" }: EmEmojiAppleProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -24,12 +26,12 @@ export function EmEmojiApple({ native, className }: EmEmojiAppleProps) {
     const el = document.createElement("em-emoji");
     el.setAttribute("native", native);
     el.setAttribute("set", EMOJI_MART_SET);
-    el.setAttribute("size", "1.15em");
+    el.setAttribute("size", emojiMartSize);
     host.appendChild(el);
     return () => {
       el.remove();
     };
-  }, [native]);
+  }, [native, emojiMartSize]);
 
   return (
     <span

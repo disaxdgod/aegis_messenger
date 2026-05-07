@@ -22,7 +22,21 @@ const SURFACE_LIFT = "#272727";
 const TAB_TRACK = "#222222";
 const TAB_ACTIVE = "#333333";
 
-function AvatarBlock({ onPick }: { onPick: (file: File) => void }) {
+function getAvatarFallback(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "?";
+  }
+  return trimmed[0]?.toUpperCase() ?? "?";
+}
+
+function AvatarBlock({
+  onPick,
+  displayName,
+}: {
+  onPick: (file: File) => void;
+  displayName: string;
+}) {
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
 
   return (
@@ -51,7 +65,7 @@ function AvatarBlock({ onPick }: { onPick: (file: File) => void }) {
               className="h-full w-full object-cover"
             />
           ) : (
-            <span aria-hidden>💀</span>
+            <span aria-hidden>{getAvatarFallback(displayName)}</span>
           )}
         </span>
         <span
@@ -73,6 +87,7 @@ export function ProfilePage() {
   const username = useProfileStore((s) => s.username);
   const firstName = useProfileStore((s) => s.firstName);
   const lastName = useProfileStore((s) => s.lastName);
+  const status = useProfileStore((s) => s.status);
   const setAvatarFromBlob = useProfileStore((s) => s.setAvatarFromBlob);
   const setBannerFromBlob = useProfileStore((s) => s.setBannerFromBlob);
   const bannerObjectUrl = useProfileStore((s) => s.bannerObjectUrl);
@@ -186,7 +201,7 @@ export function ProfilePage() {
 
         <div className="relative rounded-b-3xl px-5 pb-8 pt-0 sm:px-8 sm:pb-10">
           <div className="relative z-10 -mt-[58px] flex flex-wrap items-end justify-between gap-4 sm:-mt-[62px]">
-            <AvatarBlock onPick={openCropForFile} />
+            <AvatarBlock onPick={openCropForFile} displayName={displayName} />
             <div className="mb-1 flex flex-wrap items-center justify-end gap-2 sm:gap-2.5">
               <button
                 type="button"
@@ -204,6 +219,9 @@ export function ProfilePage() {
               </h1>
               <span className="text-[15px] text-neutral-500">@{username}</span>
             </div>
+            {status.trim() ? (
+              <p className="mt-2 text-[1.02rem] text-white">{status.trim()}</p>
+            ) : null}
 
             <p className="mt-3 text-sm text-neutral-500">
               <span className="font-semibold text-white">0</span> подписчиков ·{" "}

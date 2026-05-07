@@ -35,6 +35,14 @@ const RESULT_ROW_CLASS =
 const AVATAR_BOX_CLASS =
   "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#1a1a1a] text-xl leading-none";
 
+function getAvatarFallback(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "?";
+  }
+  return trimmed[0]?.toUpperCase() ?? "?";
+}
+
 function HashtagResultRow({
   tag,
   onPick,
@@ -199,7 +207,7 @@ export function SearchPage() {
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          <span aria-hidden>{p.emoji ?? "👤"}</span>
+                          <span aria-hidden>{getAvatarFallback(p.displayName)}</span>
                         )}
                       </div>
                       <div className="min-w-0 flex-1 text-left">

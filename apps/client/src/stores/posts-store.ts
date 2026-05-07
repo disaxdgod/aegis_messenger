@@ -10,7 +10,20 @@ export type PostMediaItem = {
 
 export type PostPollData = {
   question: string;
-  options: string[];
+  anonymous: boolean;
+  allowMultiple: boolean;
+  allowVoteCancel: boolean;
+  endsAt: number | null;
+  options: {
+    id: string;
+    text: string;
+    votes: {
+      voterId: string;
+      name: string;
+      username: string;
+      avatarUrl: string | null;
+    }[];
+  }[];
 };
 
 export type PostStats = {
@@ -54,6 +67,16 @@ type PostsState = {
   removePost: (id: string) => void;
   toggleLike: (id: string) => void;
   incrementViews: (id: string) => void;
+  voteInPoll: (
+    postId: string,
+    optionId: string,
+    voter: {
+      voterId: string;
+      name: string;
+      username: string;
+      avatarUrl: string | null;
+    },
+  ) => void;
 };
 
 export const usePostsStore = create<PostsState>((set, get) => ({
@@ -120,6 +143,65 @@ export const usePostsStore = create<PostsState>((set, get) => ({
           ? p
           : { ...p, stats: { ...p.stats, views: p.stats.views + 1 } },
       ),
+    }));
+  },
+
+  voteInPoll: (postId, optionId, voter) => {
+    set((s) => ({
+      posts: s.posts.map((p) => {
+        if (p.id !== postId || !p.poll) {
+          return p;
+        }
+        if (p.poll.endsAt !== null && Date.now() > p.poll.endsAt) {
+          return p;
+        }
+        const votedInCurrent = p.poll.options.some(
+          (o) =>
+            o.id === optionId &&
+            o.votes.some((v) => v.voterId === voter.voterId),
+        );
+
+        let optionsNext = p.poll.options;
+
+        if (p.poll.allowMultiple) {
+          if (votedInCurrent) {
+            if (!p.poll.allowVoteCancel) {
+              return p;
+            }
+            optionsNext = p.poll.options.map((o) =>
+              o.id !== optionId
+                ? o
+                : {
+                    ...o,
+                    votes: o.votes.filter((v) => v.voterId !== voter.voterId),
+                  },
+            );
+          } else {
+            optionsNext = p.poll.options.map((o) =>
+              o.id !== optionId ? o : { ...o, votes: [...o.votes, voter] },
+            );
+          }
+        } else {
+          const selectedBefore =
+            p.poll.options.find((o) =>
+              o.votes.some((v) => v.voterId === voter.voterId),
+            )?.id ?? null;
+          const shouldRemoveVote = selectedBefore === optionId;
+          if (shouldRemoveVote && !p.poll.allowVoteCancel) {
+            return p;
+          }
+          const optionsCleared = p.poll.options.map((o) => ({
+            ...o,
+            votes: o.votes.filter((v) => v.voterId !== voter.voterId),
+          }));
+          optionsNext = shouldRemoveVote
+            ? optionsCleared
+            : optionsCleared.map((o) =>
+                o.id !== optionId ? o : { ...o, votes: [...o.votes, voter] },
+              );
+        }
+        return { ...p, poll: { ...p.poll, options: optionsNext } };
+      }),
     }));
   },
 }));

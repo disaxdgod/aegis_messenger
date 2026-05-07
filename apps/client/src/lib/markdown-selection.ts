@@ -14,7 +14,7 @@ export function escapeHtml(s: string): string {
 export function wrapMarkdown(
   value: string,
   snap: SelectionSnapshot,
-  mode: "bold" | "italic" | "strike" | "code",
+  mode: "bold" | "italic" | "strike" | "underline" | "spoiler" | "code",
 ): { next: string; selStart: number; selEnd: number } {
   const { start, end } = snap;
   const selected = value.slice(start, end);
@@ -29,6 +29,12 @@ export function wrapMarkdown(
     case "strike":
       wrapped = `~~${selected}~~`;
       break;
+    case "underline":
+      wrapped = `__${selected}__`;
+      break;
+    case "spoiler":
+      wrapped = `||${selected}||`;
+      break;
     case "code":
       wrapped = `\`${selected}\``;
       break;
@@ -42,7 +48,7 @@ export function wrapMarkdown(
     prefixLen = 2;
   } else if (mode === "italic") {
     prefixLen = 1;
-  } else if (mode === "strike") {
+  } else if (mode === "strike" || mode === "underline" || mode === "spoiler") {
     prefixLen = 2;
   } else {
     prefixLen = 1;

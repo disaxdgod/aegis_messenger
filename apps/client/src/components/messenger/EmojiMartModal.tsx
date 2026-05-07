@@ -7,6 +7,7 @@ import {
   ensureEmojiMartData,
 } from "@/lib/emoji-mart-init";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 type EmojiMartModalProps = {
   open: boolean;
@@ -31,11 +32,11 @@ export function EmojiMartModal({ open, onClose, onPick }: EmojiMartModalProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[125] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
       role="dialog"
@@ -77,6 +78,7 @@ export function EmojiMartModal({ open, onClose, onPick }: EmojiMartModalProps) {
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

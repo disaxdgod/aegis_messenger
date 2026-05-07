@@ -1,10 +1,12 @@
 import { BannerDrawModal } from "@/components/messenger/BannerDrawModal";
 import { EmojiMartModal } from "@/components/messenger/EmojiMartModal";
+import { TextFormatSelectionModal } from "@/components/messenger/TextFormatSelectionModal";
 import { IconDesignTheme } from "@/components/messenger/design-theme-icons";
 import { IconPaperclip, IconPoll, IconSmile } from "@/components/messenger/nav-icons";
 import { PollCreateModal } from "@/components/messenger/PollCreateModal";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { createClientId } from "@/lib/create-client-id";
+import type { SelectionSnapshot } from "@/lib/markdown-selection";
 import { cn } from "@/lib/utils";
 import type { PostMediaItem, PostPollData } from "@/stores/posts-store";
 import { usePostsStore } from "@/stores/posts-store";
@@ -16,9 +18,22 @@ type PostComposerProps = {
   style?: CSSProperties;
 };
 
+function getAvatarFallback(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "?";
+  }
+  return trimmed[0]?.toUpperCase() ?? "?";
+}
+
 export function PostComposer({ className, style }: PostComposerProps) {
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
+  const firstName = useProfileStore((s) => s.firstName);
+  const lastName = useProfileStore((s) => s.lastName);
   const addPost = usePostsStore((s) => s.addPost);
+  const displayName =
+    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
+    "Диса Бендер";
 
   const [text, setText] = useState("");
   const [media, setMedia] = useState<PostMediaItem[]>([]);
@@ -26,15 +41,21 @@ export function PostComposer({ className, style }: PostComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [pollModalOpen, setPollModalOpen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
+  const [fmtOpen, setFmtOpen] = useState(false);
+  const [fmtSnap, setFmtSnap] = useState<SelectionSnapshot | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fmtTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftMediaRef = useRef<PostMediaItem[]>([]);
   draftMediaRef.current = media;
   useEffect(() => {
     return () => {
       for (const m of draftMediaRef.current) {
         URL.revokeObjectURL(m.url);
+      }
+      if (fmtTimerRef.current) {
+        clearTimeout(fmtTimerRef.current);
       }
     };
   }, []);
@@ -95,10 +116,47 @@ export function PostComposer({ className, style }: PostComposerProps) {
     setText("");
     setMedia([]);
     setPoll(null);
+    setFmtOpen(false);
+    setFmtSnap(null);
+  }
+
+  function scheduleFormatOpen() {
+    if (fmtTimerRef.current) {
+      clearTimeout(fmtTimerRef.current);
+    }
+    fmtTimerRef.current = setTimeout(() => {
+      fmtTimerRef.current = null;
+      const ta = textareaRef.current;
+      if (!ta) {
+        return;
+      }
+      const s = ta.selectionStart;
+      const e = ta.selectionEnd;
+      if (s < e) {
+        setFmtSnap({ start: s, end: e });
+        setFmtOpen(true);
+        return;
+      }
+      setFmtOpen(false);
+      setFmtSnap(null);
+    }, 220);
   }
 
   return (
     <>
+      <TextFormatSelectionModal
+        open={fmtOpen}
+        snapshot={fmtSnap}
+        text={text}
+        textareaRef={textareaRef}
+        onApply={(next) => {
+          setText(next);
+        }}
+        onClose={() => {
+          setFmtOpen(false);
+          setFmtSnap(null);
+        }}
+      />
       <BannerDrawModal
         open={sketchOpen}
         onClose={() => setSketchOpen(false)}
@@ -132,7 +190,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
             {avatarObjectUrl ? (
               <img src={avatarObjectUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span aria-hidden>💀</span>
+              <span aria-hidden>{getAvatarFallback(displayName)}</span>
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -144,7 +202,15 @@ export function PostComposer({ className, style }: PostComposerProps) {
               id="composer"
               rows={3}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (fmtOpen && e.target.selectionStart === e.target.selectionEnd) {
+                  setFmtOpen(false);
+                  setFmtSnap(null);
+                }
+              }}
+              onMouseUp={scheduleFormatOpen}
+              onSelect={scheduleFormatOpen}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canPublish) {
                   e.preventDefault();

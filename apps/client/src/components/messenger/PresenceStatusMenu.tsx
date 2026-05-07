@@ -38,13 +38,7 @@ function PresenceDot({ presence }: { presence: PresenceStatus }) {
       />
     );
   }
-  return (
-    <span
-      className="pointer-events-none block h-[14px] w-[14px] shrink-0 rounded-full border-[3px] border-neutral-500 bg-transparent shadow-none"
-      style={{ borderColor: "#737373" }}
-      aria-hidden
-    />
-  );
+  return null;
 }
 
 const MENU_W = 280;

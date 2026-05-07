@@ -27,6 +27,7 @@ export function TextFormatSelectionModal({
   const [linkStep, setLinkStep] = useState(false);
   const [linkUrl, setLinkUrl] = useState("https://");
   const linkInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -44,6 +45,18 @@ export function TextFormatSelectionModal({
   }, [open, onClose]);
 
   useEffect(() => {
+    if (!open) return;
+    function onDocDown(e: MouseEvent) {
+      if (!panelRef.current) return;
+      if (!panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [open, onClose]);
+
+  useEffect(() => {
     if (open && linkStep) {
       linkInputRef.current?.focus();
       linkInputRef.current?.select();
@@ -55,14 +68,14 @@ export function TextFormatSelectionModal({
   }
 
   const preview = text.slice(snapshot.start, snapshot.end);
-  const previewShort =
-    preview.length > 120 ? `${preview.slice(0, 117)}…` : preview;
+  const previewShort = preview.length > 64 ? `${preview.slice(0, 61)}…` : preview;
 
   function apply(
-    mode: "bold" | "italic" | "strike" | "code",
+    mode: "bold" | "italic" | "strike" | "underline" | "spoiler" | "code",
     e?: React.MouseEvent,
   ) {
     e?.stopPropagation();
+    if (!snapshot) return;
     const { next, selStart, selEnd } = wrapMarkdown(text, snapshot, mode);
     onApply(next, selStart, selEnd);
     focusTextareaRange(textareaRef, selStart, selEnd);
@@ -80,6 +93,7 @@ export function TextFormatSelectionModal({
     if (!u || (!/^https?:\/\//i.test(u) && !/^mailto:/i.test(u))) {
       return;
     }
+    if (!snapshot) return;
     const { next, selStart, selEnd } = wrapMarkdownLink(text, snapshot, u);
     onApply(next, selStart, selEnd);
     focusTextareaRange(textareaRef, selStart, selEnd);
@@ -93,119 +107,130 @@ export function TextFormatSelectionModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[145] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="fmt-modal-title"
-      onClick={onClose}
-    >
+    <div className="pointer-events-none fixed inset-0 z-[145]">
       <div
+        ref={panelRef}
         className={cn(
-          "w-full max-w-[400px] rounded-2xl border border-white/[0.1] bg-[#1c1c1c] p-5 shadow-2xl",
+          "pointer-events-auto fixed left-1/2 z-[145] w-[calc(100vw-16px)] -translate-x-1/2",
+          "bottom-2 max-w-[560px] rounded-2xl border border-white/[0.12] bg-[#171717]/95 p-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-md",
+          "sm:bottom-4 sm:w-auto sm:min-w-[420px]",
         )}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Форматирование текста"
       >
-        <h2
-          id="fmt-modal-title"
-          className="text-base font-semibold tracking-tight text-white"
-        >
-          Форматирование
-        </h2>
-        <p className="mt-1 text-xs text-neutral-500">
-          Markdown: выделенный фрагмент будет обёрнут в разметку.
-        </p>
-        <div className="mt-3 max-h-24 overflow-y-auto rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2 text-sm text-neutral-300">
-          {previewShort ? (
-            <span className="whitespace-pre-wrap">{previewShort}</span>
-          ) : (
-            <span className="text-neutral-600">(пусто)</span>
-          )}
-        </div>
-
         {!linkStep ? (
           <>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-neutral-500">
+                Форматирование
+              </span>
               <button
                 type="button"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm font-medium text-white hover:bg-white/[0.08]"
+                className="rounded-full px-2.5 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300"
+                onClick={onClose}
+              >
+                Закрыть
+              </button>
+            </div>
+            <div className="mb-2 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-1.5 text-xs text-neutral-400">
+              {previewShort || "(пусто)"}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/[0.08]"
+                title="Жирный"
+                aria-label="Жирный"
                 onClick={(e) => apply("bold", e)}
               >
-                Жирный
+                B
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm font-medium text-white hover:bg-white/[0.08]"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs italic text-white transition-colors hover:bg-white/[0.08]"
+                title="Курсив"
+                aria-label="Курсив"
                 onClick={(e) => apply("italic", e)}
               >
-                Курсив
+                <span className="-skew-x-12 inline-block">I</span>
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm font-medium text-white hover:bg-white/[0.08]"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white transition-colors hover:bg-white/[0.08]"
+                title="Зачёркнутый"
+                aria-label="Зачёркнутый"
                 onClick={(e) => apply("strike", e)}
               >
-                Зачёркнутый
+                <span className="line-through decoration-[1px]">abc</span>
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm font-medium text-white hover:bg-white/[0.08]"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs underline decoration-1 underline-offset-2 text-white transition-colors hover:bg-white/[0.08]"
+                title="Подчёркнутый"
+                aria-label="Подчёркнутый"
+                onClick={(e) => apply("underline", e)}
+              >
+                U
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/[0.08]"
+                title="Спойлер"
+                aria-label="Спойлер"
+                onClick={(e) => apply("spoiler", e)}
+              >
+                Спойлер
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 font-mono text-xs text-white transition-colors hover:bg-white/[0.08]"
+                title="Моноширинный"
+                aria-label="Моноширинный"
                 onClick={(e) => apply("code", e)}
               >
-                Моноширинный
+                {"</>"}
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2.5 text-sm font-medium text-cyan-200 hover:bg-cyan-500/15 sm:col-span-2"
+                className="rounded-lg border border-[var(--accent-primary)]/35 bg-[var(--accent-primary)]/10 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-[var(--accent-primary)]/16"
+                title="Вставить ссылку"
+                aria-label="Вставить ссылку"
                 onClick={startLink}
               >
-                Ссылка…
+                Ссылка
               </button>
             </div>
           </>
         ) : (
-          <div className="mt-4 space-y-3">
-            <label className="block text-xs font-medium text-neutral-400">
-              URL (https:// или mailto:)
-            </label>
+          <div className="space-y-2 pt-0.5">
+            <label className="block px-0.5 text-xs text-neutral-400">URL</label>
             <input
               ref={linkInputRef}
               type="url"
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-[#151515] px-3 py-2 text-sm text-white outline-none focus-visible:border-white/25"
+              className="w-full rounded-lg border border-white/10 bg-[#151515] px-3 py-2 text-sm text-white outline-none focus-visible:border-white/25"
               placeholder="https://"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-1.5">
               <button
                 type="button"
-                className="rounded-full border border-white/15 px-4 py-2 text-sm text-neutral-300 hover:bg-white/5"
+                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:bg-white/5"
                 onClick={cancelLink}
               >
                 Назад
               </button>
               <button
                 type="button"
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-neutral-200"
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black transition-colors hover:bg-neutral-200"
                 onClick={confirmLink}
               >
-                Вставить ссылку
+                Готово
               </button>
             </div>
           </div>
         )}
-
-        {!linkStep ? (
-          <div className="mt-5 flex justify-end">
-            <button
-              type="button"
-              className="rounded-full px-4 py-2 text-sm text-neutral-500 hover:text-neutral-300"
-              onClick={onClose}
-            >
-              Закрыть
-            </button>
-          </div>
-        ) : null}
       </div>
     </div>
   );

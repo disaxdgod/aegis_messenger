@@ -1,4 +1,3 @@
-import "dotenv/config";
 import {
   API_HEALTH_PATH,
   API_VERSION,
@@ -9,8 +8,12 @@ import type { HealthResponseDTO } from "@aegis/shared";
 import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server as SocketIOServer } from "socket.io";
 import { prisma } from "./lib/prisma.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const startedAt = Date.now();
 
@@ -45,6 +48,16 @@ app.get(API_HEALTH_PATH, async (_req, res) => {
   };
   res.json(body);
 });
+
+if (isProduction) {
+  const clientDist =
+    process.env.CLIENT_DIST_PATH?.trim() ||
+    path.join(__dirname, "..", "..", "..", "apps", "client", "dist");
+  app.use(express.static(clientDist));
+  app.get(/^(?!\/api).*$/, (_req, res) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 const httpServer = createServer(app);
 
