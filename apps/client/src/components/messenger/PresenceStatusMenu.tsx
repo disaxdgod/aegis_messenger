@@ -38,7 +38,16 @@ function PresenceDot({ presence }: { presence: PresenceStatus }) {
       />
     );
   }
-  return null;
+  return (
+    <span
+      className={cn(
+        base,
+        "border-[#9ca3af] bg-transparent",
+        "shadow-[0_0_0_1px_rgba(0,0,0,0.2)]",
+      )}
+      aria-hidden
+    />
+  );
 }
 
 const MENU_W = 280;

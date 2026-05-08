@@ -24,6 +24,8 @@ const COLORS = [
 ] as const;
 
 const BRUSH_SIZES = [2, 4, 8, 12, 18] as const;
+const BANNER_CANVAS_WIDTH = 900;
+const BANNER_CANVAS_HEIGHT = 300;
 
 type Tool = "pen" | "eraser" | "line" | "rect" | "circle";
 
@@ -39,8 +41,13 @@ function canvasPos(
   clientY: number,
 ) {
   const r = canvas.getBoundingClientRect();
-  const sx = canvas.width / r.width;
-  const sy = canvas.height / r.height;
+  /**
+   * Важно: рисуем в "логических" координатах (900x300), потому что контекст
+   * уже масштабирован через ctx.setTransform(dpr, ...). Если умножать на
+   * canvas.width/canvas.height (в device px), курсор уезжает на DPR-экранах.
+   */
+  const sx = BANNER_CANVAS_WIDTH / r.width;
+  const sy = BANNER_CANVAS_HEIGHT / r.height;
   return {
     x: (clientX - r.left) * sx,
     y: (clientY - r.top) * sy,
@@ -63,6 +70,7 @@ export function BannerDrawModal({
   const [color, setColor] = useState<string>(COLORS[0]);
   const [brushIdx, setBrushIdx] = useState(1);
   const [zoom, setZoom] = useState(100);
+  const [isLandscapeMobile, setIsLandscapeMobile] = useState(false);
 
   const brushSize = BRUSH_SIZES[brushIdx];
 
@@ -104,8 +112,8 @@ export function BannerDrawModal({
     if (!canvas) {
       return;
     }
-    const w = 900;
-    const h = 300;
+    const w = BANNER_CANVAS_WIDTH;
+    const h = BANNER_CANVAS_HEIGHT;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
@@ -145,6 +153,17 @@ export function BannerDrawModal({
       window.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+    const mq = window.matchMedia("(max-width: 932px) and (orientation: landscape)");
+    const sync = () => setIsLandscapeMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [open]);
 
   function commitStroke() {
     syncHistoryTip();
@@ -257,8 +276,8 @@ export function BannerDrawModal({
     if (!ctx) {
       return;
     }
-    const w = 900;
-    const h = 300;
+    const w = BANNER_CANVAS_WIDTH;
+    const h = BANNER_CANVAS_HEIGHT;
     const dpr = canvas.width / w;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalCompositeOperation = "source-over";
@@ -303,18 +322,24 @@ export function BannerDrawModal({
 
   return (
     <div
-      className="fixed inset-0 z-[95] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[95] flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="banner-draw-title"
     >
       <div
         className={cn(
-          "flex max-h-[min(96dvh,920px)] w-full max-w-[min(96vw,920px)] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1a1a1a] shadow-2xl",
+          "flex h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden border border-white/[0.08] bg-[#1a1a1a] shadow-2xl",
+          "rounded-none sm:h-auto sm:max-h-[min(96dvh,920px)] sm:max-w-[min(96vw,920px)] sm:rounded-2xl",
         )}
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] px-4 py-3">
-          <div className="flex items-center gap-1">
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 border-b border-white/[0.08] px-3 py-2.5 sm:px-4 sm:py-3",
+            isLandscapeMobile && "gap-1.5 px-2 py-2",
+          )}
+        >
+          <div className="flex w-full items-center gap-1 overflow-x-auto pb-1 pr-1 sm:w-auto sm:max-w-full">
             {toolBtn(
               "pen",
               "Карандаш",
@@ -354,9 +379,9 @@ export function BannerDrawModal({
             )}
           </div>
 
-          <div className="mx-2 hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
+          <div className="mx-1 hidden h-6 w-px bg-white/10 md:block" aria-hidden />
 
-          <div className="flex items-center gap-2">
+          <div className={cn("flex items-center gap-2", isLandscapeMobile && "gap-1.5")}>
             {BRUSH_SIZES.map((s, i) => (
               <button
                 key={s}
@@ -377,9 +402,14 @@ export function BannerDrawModal({
             ))}
           </div>
 
-          <div className="mx-2 hidden h-6 w-px bg-white/10 md:block" aria-hidden />
+          <div className="mx-1 hidden h-6 w-px bg-white/10 md:block" aria-hidden />
 
-          <div className="flex flex-1 flex-wrap items-center gap-1.5">
+          <div
+            className={cn(
+              "flex w-full flex-wrap items-center gap-1.5 sm:flex-1 sm:w-auto",
+              isLandscapeMobile && "gap-1",
+            )}
+          >
             {COLORS.map((c) => (
               <button
                 key={c}
@@ -389,6 +419,7 @@ export function BannerDrawModal({
                 onClick={() => setColor(c)}
                 className={cn(
                   "h-7 w-7 shrink-0 rounded-full border-2 transition-transform hover:scale-110",
+                  isLandscapeMobile && "h-6 w-6",
                   color === c ? "border-white ring-1 ring-white/50" : "border-transparent",
                 )}
                 style={{ backgroundColor: c }}
@@ -396,7 +427,12 @@ export function BannerDrawModal({
             ))}
           </div>
 
-          <div className="ml-auto flex items-center gap-1 border-l border-white/10 pl-3">
+          <div
+            className={cn(
+              "ml-auto flex shrink-0 items-center gap-1 border-l border-white/10 pl-2 sm:pl-3",
+              isLandscapeMobile && "pl-1.5",
+            )}
+          >
             <button
               type="button"
               className="rounded-md px-2 py-1 text-lg text-neutral-400 hover:bg-white/10 hover:text-white"
@@ -417,7 +453,12 @@ export function BannerDrawModal({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
+        <div
+          className={cn(
+            "flex items-center gap-2 border-b border-white/[0.06] px-3 py-2 sm:px-4",
+            isLandscapeMobile && "gap-1 px-2 py-1.5",
+          )}
+        >
           <button
             type="button"
             className="rounded-md p-2 text-neutral-400 hover:bg-white/10 hover:text-white"
@@ -459,7 +500,7 @@ export function BannerDrawModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-[#141414] p-4">
+        <div className={cn("min-h-0 flex-1 overflow-auto bg-[#141414] p-2.5 sm:p-4", isLandscapeMobile && "p-2")}>
           <div
             className="mx-auto flex justify-center"
             style={{
@@ -469,7 +510,7 @@ export function BannerDrawModal({
           >
             <canvas
               ref={canvasRef}
-              className="block max-w-full cursor-crosshair bg-white shadow-inner"
+              className="block max-w-full cursor-crosshair touch-none select-none bg-white shadow-inner"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -482,20 +523,31 @@ export function BannerDrawModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-white/[0.08] px-4 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-end gap-3 border-t border-white/[0.08] px-3 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-4 sm:py-4",
+            isLandscapeMobile && "gap-2 px-2 py-2 pb-[max(8px,env(safe-area-inset-bottom))]",
+          )}
+        >
           <h2 id="banner-draw-title" className="sr-only">
             Редактор баннера
           </h2>
           <button
             type="button"
-            className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+            className={cn(
+              "w-1/2 rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10 sm:w-auto",
+              isLandscapeMobile && "px-4 py-1.5 text-xs",
+            )}
             onClick={onClose}
           >
             Отмена
           </button>
           <button
             type="button"
-            className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-200"
+            className={cn(
+              "w-1/2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 sm:w-auto",
+              isLandscapeMobile && "px-4 py-1.5 text-xs",
+            )}
             onClick={handleUpload}
           >
             Загрузить баннер

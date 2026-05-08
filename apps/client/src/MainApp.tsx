@@ -40,7 +40,7 @@ export function MainApp() {
         Плавающий макет: внешние поля у всего UI, внутри — центрированный ряд
         «сайдбар-карточка + контент», без fixed к краям вьюпорта.
       */}
-      <div className="mx-auto flex min-h-dvh w-full max-w-[100vw] flex-col items-center px-4 pb-28 pt-4 sm:px-6 sm:pb-28 sm:pt-6 lg:px-10 lg:pb-12 lg:pt-10">
+      <div className="itd-main-shell mx-auto flex min-h-dvh w-full max-w-[100vw] flex-col items-center px-4 pb-28 pt-4 sm:px-6 sm:pb-28 sm:pt-6 lg:px-10 lg:pb-12 lg:pt-10">
         <div className="flex w-full max-w-full flex-col gap-8 lg:mx-auto lg:inline-flex lg:w-fit lg:max-w-none lg:flex-row lg:items-start lg:justify-center lg:gap-6 xl:gap-8">
           <div className="hidden w-64 shrink-0 lg:flex lg:flex-col lg:self-stretch">
             <div className="sticky top-4 z-10 w-full self-start sm:top-6 lg:top-10">

@@ -38,7 +38,7 @@ export function MessengerSidebar() {
     >
       <div className="mb-8 shrink-0">
         <span className="text-lg font-bold tracking-tight text-white">Aegis</span>
-        <span className="ml-1.5 text-sm font-normal text-neutral-500">v1.1</span>
+        <span className="ml-1.5 text-sm font-normal text-neutral-500">v0.1.1</span>
       </div>
 
       <nav className="flex shrink-0 flex-col gap-2" aria-label="Разделы">

@@ -88,6 +88,10 @@ export function ProfilePage() {
   const firstName = useProfileStore((s) => s.firstName);
   const lastName = useProfileStore((s) => s.lastName);
   const status = useProfileStore((s) => s.status);
+  const setUsername = useProfileStore((s) => s.setUsername);
+  const setFirstName = useProfileStore((s) => s.setFirstName);
+  const setLastName = useProfileStore((s) => s.setLastName);
+  const setStatus = useProfileStore((s) => s.setStatus);
   const setAvatarFromBlob = useProfileStore((s) => s.setAvatarFromBlob);
   const setBannerFromBlob = useProfileStore((s) => s.setBannerFromBlob);
   const bannerObjectUrl = useProfileStore((s) => s.bannerObjectUrl);
@@ -95,6 +99,14 @@ export function ProfilePage() {
 
   const [tab, setTab] = useState<ProfileTab>("posts");
   const [bannerEditorOpen, setBannerEditorOpen] = useState(false);
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"account" | "appearance" | "security" | "privacy" | "alerts">(
+    "account",
+  );
+  const [draftDisplayName, setDraftDisplayName] = useState("");
+  const [draftUsername, setDraftUsername] = useState("");
+  const [draftStatus, setDraftStatus] = useState("");
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const cropSrcRef = useRef<string | null>(null);
 
@@ -107,9 +119,44 @@ export function ProfilePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [settingsOpen]);
+
   const displayName =
     [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
     "Диса Бендер";
+
+  function openSettings() {
+    setDraftDisplayName(displayName);
+    setDraftUsername(username);
+    setDraftStatus(status);
+    setSettingsTab("account");
+    setSettingsOpen(true);
+  }
+
+  function saveSettings() {
+    const normalizedUsername = draftUsername.trim().replace(/^@+/, "");
+    const normalizedName = draftDisplayName.trim();
+    if (normalizedName) {
+      const [first, ...rest] = normalizedName.split(/\s+/);
+      setFirstName(first ?? "");
+      setLastName(rest.join(" "));
+    } else {
+      setFirstName("");
+      setLastName("");
+    }
+    setUsername(normalizedUsername);
+    setStatus(draftStatus.trim());
+    setSettingsOpen(false);
+  }
 
   function openCropForFile(file: File) {
     if (cropSrcRef.current) {
@@ -149,6 +196,142 @@ export function ProfilePage() {
         onClose={() => setBannerEditorOpen(false)}
         onComplete={(blob) => setBannerFromBlob(blob)}
       />
+      {postComposerOpen ? (
+        <div
+          className="fixed inset-0 z-[96] flex items-end bg-black/70 p-0 backdrop-blur-sm sm:p-4 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Новая публикация"
+          onClick={() => setPostComposerOpen(false)}
+        >
+          <div
+            className="max-h-[90dvh] w-full overflow-auto rounded-t-3xl border border-white/[0.08] bg-[#1e1e1e] sm:mx-auto sm:max-w-[640px] sm:rounded-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.08] bg-[#1e1e1e]/95 px-4 py-3 backdrop-blur-md">
+              <p className="text-sm font-semibold text-white">Новая публикация</p>
+              <button
+                type="button"
+                className="rounded-full px-3 py-1 text-xs text-neutral-400 transition-colors hover:bg-white/10 hover:text-white"
+                onClick={() => setPostComposerOpen(false)}
+              >
+                Закрыть
+              </button>
+            </div>
+            <PostComposer
+              className="rounded-none p-4 sm:p-5"
+              style={{ backgroundColor: SURFACE_LIFT }}
+            />
+            <div className="h-[max(12px,env(safe-area-inset-bottom))]" aria-hidden />
+          </div>
+        </div>
+      ) : null}
+      {settingsOpen ? (
+        <div
+          className="fixed inset-0 z-[97] flex items-center justify-center bg-black/70 p-2 backdrop-blur-sm sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Настройки профиля"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="flex h-[min(88dvh,560px)] w-full max-w-[min(96vw,900px)] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1f2023] shadow-[0_22px_60px_rgba(0,0,0,0.55)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <aside className="w-[210px] shrink-0 border-r border-white/[0.08] bg-[#232429] p-3">
+              <p className="px-2 py-2 text-sm font-semibold text-white">Настройки</p>
+              <div className="mt-1 space-y-0.5">
+                {[
+                  ["account", "Аккаунт"],
+                  ["appearance", "Оформление"],
+                  ["security", "Безопасность"],
+                  ["privacy", "Приватность"],
+                  ["alerts", "Уведомления"],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
+                      settingsTab === id
+                        ? "bg-[#111317] text-white"
+                        : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200",
+                    )}
+                    onClick={() => setSettingsTab(id as typeof settingsTab)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </aside>
+            <div className="min-w-0 flex-1 bg-[#202126]">
+              <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
+                <h2 className="text-base font-semibold text-white">
+                  {settingsTab === "account" ? "Аккаунт" : "Раздел в разработке"}
+                </h2>
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-neutral-400 transition-colors hover:bg-white/10 hover:text-white"
+                  onClick={() => setSettingsOpen(false)}
+                  aria-label="Закрыть настройки"
+                >
+                  ×
+                </button>
+              </div>
+              {settingsTab === "account" ? (
+                <div className="space-y-3 p-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-neutral-400">Имя</label>
+                    <input
+                      value={draftDisplayName}
+                      onChange={(e) => setDraftDisplayName(e.target.value)}
+                      className="h-10 w-full rounded-md border border-white/[0.08] bg-[#111317] px-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-white/[0.2]"
+                      placeholder="Отображаемое имя"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-neutral-400">Username</label>
+                    <input
+                      value={draftUsername}
+                      onChange={(e) => setDraftUsername(e.target.value)}
+                      className="h-10 w-full rounded-md border border-white/[0.08] bg-[#111317] px-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-white/[0.2]"
+                      placeholder="username"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-neutral-400">О себе</label>
+                    <textarea
+                      rows={4}
+                      value={draftStatus}
+                      onChange={(e) => setDraftStatus(e.target.value)}
+                      className="w-full resize-none rounded-md border border-white/[0.08] bg-[#111317] px-3 py-2 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-white/[0.2]"
+                      placeholder="Расскажите немного о себе"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      className="rounded-full border border-white/15 px-4 py-1.5 text-sm text-neutral-300 hover:bg-white/[0.06]"
+                      onClick={() => setSettingsOpen(false)}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-black hover:bg-neutral-200"
+                      onClick={saveSettings}
+                    >
+                      Сохранить
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-neutral-500">Этот раздел скоро появится.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-5 flex justify-end lg:hidden">
         <button
@@ -186,7 +369,7 @@ export function ProfilePage() {
             type="button"
             onClick={() => setBannerEditorOpen(true)}
             className={cn(
-              "absolute bottom-3 right-3 z-[2] flex h-10 w-10 items-center justify-center rounded-xl",
+              "absolute bottom-3 right-3 z-[30] flex h-10 w-10 items-center justify-center rounded-xl",
               "border border-white/[0.12] bg-[#1a1a1a]/85 text-neutral-200 shadow-[0_4px_20px_rgba(0,0,0,0.35)] backdrop-blur-md",
               "transition-[color,background-color,border-color,transform] duration-200 ease-out",
               "hover:border-white/20 hover:bg-[#222]/95 hover:text-white",
@@ -205,6 +388,7 @@ export function ProfilePage() {
             <div className="mb-1 flex flex-wrap items-center justify-end gap-2 sm:gap-2.5">
               <button
                 type="button"
+                onClick={openSettings}
                 className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-100"
               >
                 Редактировать
@@ -274,11 +458,21 @@ export function ProfilePage() {
             </button>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 hidden lg:block">
             <PostComposer
               className="rounded-2xl p-4 sm:p-5"
               style={{ backgroundColor: SURFACE_LIFT }}
             />
+          </div>
+          <div className="mt-5 lg:hidden">
+            <button
+              type="button"
+              className="h-11 w-full rounded-full px-4 text-sm font-semibold tracking-tight text-white"
+              style={{ backgroundColor: TAB_ACTIVE }}
+              onClick={() => setPostComposerOpen(true)}
+            >
+              Создать публикацию
+            </button>
           </div>
 
           {tab === "posts" ? (

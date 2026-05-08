@@ -11,8 +11,8 @@
   left: 0;
   right: 0;
   z-index: 50;
-  padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: var(--nav-gradient);
   pointer-events: none;
   align-items: flex-end;
@@ -25,14 +25,60 @@
   transform: translateY(100%);
 }
 
+body.itd-chat-open-mobile .itd-mnav-root {
+  transform: translateY(120%);
+  pointer-events: none;
+}
+
+/* ——— Мессенджер на мобильном (список чатов) ——— */
+body.itd-messenger-mobile {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.itd-messenger-mobile #root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Список чатов: высота с учётом нижнего нава (~96px) */
+body.itd-messenger-mobile .itd-main-shell {
+  padding-bottom: 96px !important;
+}
+
+body.itd-messenger-mobile .itd-messages-root {
+  height: calc(100dvh - 16px - 96px); /* pt-4 + nav area */
+}
+
+/* ——— Открытый чат на мобильном ——— */
+body.itd-chat-open-mobile .itd-main-shell {
+  padding-bottom: 16px !important;
+}
+
+body.itd-chat-open-mobile .itd-messages-root {
+  height: calc(100dvh - 32px); /* pt-4 + pb-override */
+}
+
+body.itd-chat-open-mobile {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.itd-chat-open-mobile #root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .itd-mnav-bar {
   position: relative;
   width: 100%;
-  min-height: 64px;
+  min-height: 68px;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   padding: 6px;
   overflow: visible;
   background: var(--glass-bg);
@@ -48,7 +94,7 @@
   position: relative;
   flex: 1;
   min-width: 0;
-  height: 52px;
+  height: 56px;
   display: flex;
   align-items: stretch;
 }
@@ -84,7 +130,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 4px 0;
+  padding: 6px 0 5px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -101,48 +147,34 @@
 }
 
 .itd-mnav-tab-label {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
   font-size: 10px;
   font-weight: 500;
-  line-height: 1;
-}
-
-.itd-mnav-event {
-  flex-shrink: 0;
-  width: 64px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  border: none;
-  border-radius: 32px;
-  cursor: pointer;
-  pointer-events: auto;
-  color: var(--text-primary);
-  box-shadow: var(--shadow-elevated);
-  transition: transform 0.15s ease, background-color 0.2s ease;
-}
-
-.itd-mnav-event:hover {
-  background: var(--block-bg-secondary);
-}
-
-.itd-mnav-event:active {
-  transform: scale(0.97);
+  line-height: 11px;
+  min-height: 11px;
+  white-space: nowrap;
 }
 
 .itd-mnav-event-inner {
   position: relative;
   display: flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
   align-items: center;
   justify-content: center;
 }
 
 .itd-mnav-icon {
-  width: 24px;
-  height: 24px;
+  display: block;
+  width: 22px;
+  height: 22px;
 }
 
 .itd-mnav-icon--glow {

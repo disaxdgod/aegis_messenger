@@ -2,6 +2,7 @@ import { EmojiMartModal } from "@/components/messenger/EmojiMartModal";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { MessengerConfirmModal } from "@/components/messenger/MessengerConfirmModal";
 import { IconMessages, IconPaperclip, IconSearch, IconSmile } from "@/components/messenger/nav-icons";
+import { splitEmojiAware } from "@/lib/split-emoji-text";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
@@ -31,6 +32,16 @@ type MessageItem = {
     /** Длительность для голоса / видеокружка, сек. */
     durationSec?: number;
   };
+};
+
+type PendingRecordedAttachment = {
+  chatId: string;
+  kind: "voice" | "video_note";
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+  durationSec: number;
 };
 
 function IconDotsHorizontal({ className }: { className?: string }) {
@@ -172,9 +183,9 @@ const CHATS: ChatItem[] = [
   },
 ];
 
-/** Список с подписями в узкой колонке; поле поиска — только при достаточной ширине (избегает «Поис…»). */
-const SIDEBAR_LIST_EXPANDED_MIN = 108;
-const SIDEBAR_SEARCH_FIELD_MIN = 140;
+/** Список с подписями в узкой колонке (показываем текст раньше, чтобы не терять полезное место). */
+const SIDEBAR_LIST_EXPANDED_MIN = 96;
+const VIDEO_NOTE_MAX_DURATION_SEC = 60;
 
 const MESSAGES_BY_CHAT: Record<string, MessageItem[]> = {
   "c-1": [
@@ -260,10 +271,10 @@ function nowTimeLabel() {
 }
 
 function MessageStatusTicks({ status }: { status: "sent" | "delivered" | "read" }) {
-  const tone = status === "read" ? "text-[var(--link-color)]" : "text-neutral-500";
+  const tone = status === "sent" ? "text-[#9AD0FF]" : "text-[#6BBFFF]";
   if (status === "sent") {
     return (
-      <svg viewBox="0 0 16 16" className={cn("h-3.5 w-3.5", tone)} aria-hidden>
+      <svg viewBox="0 0 16 16" className={cn("h-[15px] w-[15px]", tone)} aria-hidden>
         <path
           fill="currentColor"
           fillRule="evenodd"
@@ -274,7 +285,7 @@ function MessageStatusTicks({ status }: { status: "sent" | "delivered" | "read" 
     );
   }
   return (
-    <svg viewBox="0 0 16 16" className={cn("h-3.5 w-3.5", tone)} aria-hidden>
+    <svg viewBox="0 0 16 16" className={cn("h-[15px] w-[15px]", tone)} aria-hidden>
       <path
         fill="currentColor"
         fillRule="evenodd"
@@ -433,8 +444,10 @@ function VoiceAttachmentPlayer({
   return (
     <div
       className={cn(
-        "flex min-w-[240px] max-w-[min(100%,320px)] items-center gap-2 rounded-[999px] py-2 pl-2 pr-2.5",
-        fromMe ? "bg-black/22" : "bg-black/28",
+        "flex min-w-[220px] max-w-[min(100%,340px)] items-center gap-2 rounded-2xl border px-2.5 py-2",
+        fromMe
+          ? "border-[color:var(--accent-primary)]/35 bg-[color:color-mix(in_srgb,var(--accent-primary)_18%,#1f2430)]"
+          : "border-white/[0.08] bg-[#25262b]",
         className,
       )}
     >
@@ -464,7 +477,7 @@ function VoiceAttachmentPlayer({
         type="button"
         onClick={toggle}
         className={cn(
-          "grid h-10 w-10 shrink-0 place-items-center rounded-full text-white shadow-sm transition-[transform,background-color] active:scale-95",
+          "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white shadow-sm transition-[transform,background-color] active:scale-95",
           "bg-[var(--accent-primary)] hover:brightness-110",
         )}
         aria-label={playing ? "Пауза" : "Воспроизвести"}
@@ -475,18 +488,21 @@ function VoiceAttachmentPlayer({
           <VoicePlayGlyph className="h-[18px] w-[18px] translate-x-[2px]" />
         )}
       </button>
-      <div className="flex h-10 min-w-0 flex-1 items-center justify-center gap-[3px] px-0.5">
+      <div className="flex h-9 min-w-0 flex-1 items-center justify-center gap-[2px] px-0.5">
         {factors.map((f, i) => {
           const edge = activeThru - i;
           const playedFull = edge >= 1;
           const partial = edge > 0 && edge < 1;
-          const hPx = Math.round(5 + f * 27);
+          const hPx = Math.round(4 + f * 20);
           const opacity =
             playedFull ? 1 : partial ? 0.28 + edge * 0.72 : 0.26;
           return (
             <div
               key={i}
-              className="w-[3px] shrink-0 rounded-full bg-[var(--accent-primary)] transition-[opacity,height] duration-100 ease-out"
+              className={cn(
+                "w-[2px] shrink-0 rounded-full transition-[opacity,height,background-color] duration-100 ease-out",
+                playedFull || partial ? "bg-[var(--accent-primary)]" : "bg-neutral-500/65",
+              )}
               style={{ height: `${hPx}px`, opacity }}
             />
           );
@@ -494,8 +510,8 @@ function VoiceAttachmentPlayer({
       </div>
       <span
         className={cn(
-          "min-w-[38px] shrink-0 tabular-nums text-[12px] font-medium tracking-tight",
-          fromMe ? "text-neutral-300" : "text-neutral-400",
+          "min-w-[40px] shrink-0 rounded-md bg-black/20 px-1.5 py-0.5 text-center tabular-nums text-[11px] font-medium tracking-tight",
+          fromMe ? "text-neutral-200" : "text-neutral-300",
         )}
       >
         {timeLabel}
@@ -593,7 +609,7 @@ function VideoNoteCirclePlayer({
             preload="metadata"
             disablePictureInPicture
             tabIndex={-1}
-            className="pointer-events-none h-full w-full object-cover outline-none"
+            className="pointer-events-none h-full w-full object-cover outline-none [transform:scaleX(-1)]"
           />
           {!playing ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/18">
@@ -727,6 +743,8 @@ export function MessagesPage() {
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingRecordedAttachment, setPendingRecordedAttachment] =
+    useState<PendingRecordedAttachment | null>(null);
   const [sendingCompressed, setSendingCompressed] = useState(false);
   const [leftPaneWidth, setLeftPaneWidth] = useState(92);
   const [isResizingPane, setIsResizingPane] = useState(false);
@@ -747,16 +765,41 @@ export function MessagesPage() {
   } | null>(null);
   const [voiceUiMode, setVoiceUiMode] = useState<"mic" | "circle">("mic");
   const [isRecordingMedia, setIsRecordingMedia] = useState(false);
+  const [voiceControlLiftPx, setVoiceControlLiftPx] = useState(0);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [recordingElapsedSec, setRecordingElapsedSec] = useState(0);
+  const [recordingBars, setRecordingBars] = useState<number[]>(() => Array.from({ length: 28 }, () => 0.18));
+  const recordDiscardRef = useRef(false);
+  const startedByCurrentPressRef = useRef(false);
+  const recordingAtPointerDownRef = useRef(false);
+  const suppressNextVoiceClickRef = useRef(false);
+  const recordAudioCtxRef = useRef<AudioContext | null>(null);
+  const recordAnalyserRef = useRef<AnalyserNode | null>(null);
+  const recordAnalyserDataRef = useRef<Uint8Array | null>(null);
+  const recordAnimFrameRef = useRef<number | null>(null);
+  const recordBarsPhaseRef = useRef(0);
+  const recordingPreviewVideoRef = useRef<HTMLVideoElement>(null);
+  const videoNoteAutoStopRef = useRef(false);
+  const voicePointerStartYRef = useRef(0);
+  const voicePointerTypeRef = useRef<"mouse" | "touch" | "pen" | null>(null);
+  const voiceDragIntentRef = useRef(false);
+  const prevMessagesStateRef = useRef<{
+    chatId: string | null;
+    count: number;
+  }>({
+    chatId: null,
+    count: 0,
+  });
   const voiceUiModeRef = useRef(voiceUiMode);
   voiceUiModeRef.current = voiceUiMode;
   const expandedLeftPane = leftPaneWidth >= SIDEBAR_LIST_EXPANDED_MIN;
-  const desktopSearchExpanded = leftPaneWidth >= SIDEBAR_SEARCH_FIELD_MIN;
 
   function openChat(chatId: string) {
     setActiveChatId(chatId);
     setMobileChatOpen(true);
     setDraft("");
     setPendingFile(null);
+    clearPendingRecordedAttachment();
     setVoiceUiMode("mic");
   }
 
@@ -767,6 +810,7 @@ export function MessagesPage() {
 
   useEffect(() => {
     return () => {
+      stopRecordingVisualizer();
       if (recordHoldTimerRef.current) {
         clearTimeout(recordHoldTimerRef.current);
       }
@@ -824,6 +868,72 @@ export function MessagesPage() {
     };
   }, [isResizingPane]);
 
+  function stopRecordingVisualizer() {
+    if (recordAnimFrameRef.current != null) {
+      cancelAnimationFrame(recordAnimFrameRef.current);
+      recordAnimFrameRef.current = null;
+    }
+    recordAnalyserRef.current = null;
+    recordAnalyserDataRef.current = null;
+    const ctx = recordAudioCtxRef.current;
+    recordAudioCtxRef.current = null;
+    if (ctx) {
+      void ctx.close().catch(() => {});
+    }
+    setRecordingBars(Array.from({ length: 28 }, () => 0.18));
+  }
+
+  useEffect(() => {
+    if (!isRecordingMedia || recordingStartedAt == null) {
+      setRecordingElapsedSec(0);
+      return;
+    }
+    const tick = () => {
+      setRecordingElapsedSec(Math.max(0, (Date.now() - recordingStartedAt) / 1000));
+    };
+    tick();
+    const timer = window.setInterval(tick, 40);
+    return () => window.clearInterval(timer);
+  }, [isRecordingMedia, recordingStartedAt]);
+
+  useEffect(() => {
+    const video = recordingPreviewVideoRef.current;
+    if (!video) {
+      return;
+    }
+    const session = recordSessionRef.current;
+    if (isRecordingMedia && session?.kind === "video_note") {
+      video.srcObject = session.stream;
+      void video.play().catch(() => {});
+      return;
+    }
+    video.srcObject = null;
+  }, [isRecordingMedia]);
+
+  useEffect(() => {
+    const cls = "itd-chat-open-mobile";
+    if (!isDesktopLg && mobileChatOpen) {
+      document.body.classList.add(cls);
+    } else {
+      document.body.classList.remove(cls);
+    }
+    return () => {
+      document.body.classList.remove(cls);
+    };
+  }, [isDesktopLg, mobileChatOpen]);
+
+  useEffect(() => {
+    const cls = "itd-messenger-mobile";
+    if (!isDesktopLg) {
+      document.body.classList.add(cls);
+    } else {
+      document.body.classList.remove(cls);
+    }
+    return () => {
+      document.body.classList.remove(cls);
+    };
+  }, [isDesktopLg]);
+
   const filteredChats = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) {
@@ -841,6 +951,39 @@ export function MessagesPage() {
   const activeChat =
     filteredChats.find((chat) => chat.id === desktopActiveChatId) ?? null;
   const messages = activeChat ? (messagesByChat[activeChat.id] ?? []) : [];
+
+  useEffect(() => {
+    const prev = prevMessagesStateRef.current;
+    const currentChatId = activeChat?.id ?? null;
+    const currentCount = messages.length;
+
+    // При переключении чата не автоскроллим, только обновляем baseline.
+    if (prev.chatId !== currentChatId) {
+      prevMessagesStateRef.current = {
+        chatId: currentChatId,
+        count: currentCount,
+      };
+      return;
+    }
+
+    const last = messages[currentCount - 1];
+    const hasNewMessage = currentCount > prev.count;
+
+    if (hasNewMessage && last?.fromMe) {
+      requestAnimationFrame(() => {
+        const host = messagesScrollRef.current;
+        if (!host) {
+          return;
+        }
+        host.scrollTo({ top: host.scrollHeight, behavior: "smooth" });
+      });
+    }
+
+    prevMessagesStateRef.current = {
+      chatId: currentChatId,
+      count: currentCount,
+    };
+  }, [activeChat?.id, messages]);
 
   function updateChatPreview(chatId: string, text: string, time: string) {
     setChats((prev) =>
@@ -922,6 +1065,39 @@ export function MessagesPage() {
     setPendingFile(file);
   }
 
+  function clearPendingRecordedAttachment() {
+    setPendingRecordedAttachment((prev) => {
+      if (prev) {
+        URL.revokeObjectURL(prev.url);
+      }
+      return null;
+    });
+  }
+
+  function sendComposerMessage() {
+    sendMessage(draft);
+  }
+
+  function sendRecordedByMic() {
+    if (!pendingRecordedAttachment) {
+      return;
+    }
+    sendMessage(
+      "",
+      {
+        kind: pendingRecordedAttachment.kind,
+        url: pendingRecordedAttachment.url,
+        name: pendingRecordedAttachment.name,
+        mime: pendingRecordedAttachment.mime,
+        size: pendingRecordedAttachment.size,
+        compressed: false,
+        durationSec: pendingRecordedAttachment.durationSec,
+      },
+      { forChatId: pendingRecordedAttachment.chatId },
+    );
+    setPendingRecordedAttachment(null);
+  }
+
   function insertEmoji(emoji: string) {
     const ta = textareaRef.current;
     if (!ta) {
@@ -965,6 +1141,52 @@ export function MessagesPage() {
               },
             };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        const audioCtx = new AudioContext();
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.86;
+        const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
+        source.connect(analyser);
+        const timeData = new Uint8Array(analyser.fftSize);
+        recordAudioCtxRef.current = audioCtx;
+        recordAnalyserRef.current = analyser;
+        recordAnalyserDataRef.current = timeData;
+        const barsCount = 28;
+        const animateBars = () => {
+          const node = recordAnalyserRef.current;
+          const data = recordAnalyserDataRef.current;
+          if (!node || !data) {
+            return;
+          }
+          node.getByteTimeDomainData(data);
+          let sumSq = 0;
+          for (let i = 0; i < data.length; i++) {
+            const centered = (data[i] - 128) / 128;
+            sumSq += centered * centered;
+          }
+          const rms = Math.sqrt(sumSq / data.length);
+          const level = Math.max(0, Math.min(1, rms * 4.2));
+          recordBarsPhaseRef.current += 0.16;
+          setRecordingBars((prev) => {
+            return prev.map((old, i) => {
+              // Вся линия движется целиком: живая форма + уровень микрофона.
+              const a = (Math.sin(recordBarsPhaseRef.current + i * 0.58) + 1) * 0.5;
+              const b = (Math.sin(recordBarsPhaseRef.current * 1.35 + i * 0.27) + 1) * 0.5;
+              const shape = a * 0.72 + b * 0.28;
+              // База не нулевая, чтобы полосы "дышали" даже в тишине.
+              const base = 0.06 + shape * 0.06;
+              const target = base + level * (0.42 + shape * 1.08);
+              // Плавная атака/затухание без залипания высоких значений.
+              const smooth = old + (target - old) * 0.33;
+              return Math.max(0.04, Math.min(1, smooth));
+            });
+          });
+          recordAnimFrameRef.current = requestAnimationFrame(animateBars);
+        };
+        recordAnimFrameRef.current = requestAnimationFrame(animateBars);
+      }
       const mime = mediaKind === "voice" ? pickAudioMime() : pickVideoNoteMime();
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks: Blob[] = [];
@@ -983,18 +1205,26 @@ export function MessagesPage() {
         chunks,
         startTs,
       };
+      recordDiscardRef.current = false;
+      setRecordingStartedAt(startTs);
       setIsRecordingMedia(true);
     } catch {
       setIsRecordingMedia(false);
+      setRecordingStartedAt(null);
+      setRecordingElapsedSec(0);
+      stopRecordingVisualizer();
       recordSessionRef.current = null;
     }
   }
 
-  function finalizeMediaRecording() {
+  function finalizeMediaRecording(options?: { discard?: boolean }) {
     const session = recordSessionRef.current;
     recordSessionRef.current = null;
+    recordDiscardRef.current = Boolean(options?.discard);
     if (!session) {
       setIsRecordingMedia(false);
+      setRecordingStartedAt(null);
+      setRecordingElapsedSec(0);
       return;
     }
     const { recorder, stream, chunks, startTs, kind, chatId } = session;
@@ -1002,6 +1232,13 @@ export function MessagesPage() {
     recorder.onstop = () => {
       stream.getTracks().forEach((t) => t.stop());
       setIsRecordingMedia(false);
+      setRecordingStartedAt(null);
+      setRecordingElapsedSec(0);
+      stopRecordingVisualizer();
+      if (recordDiscardRef.current) {
+        recordDiscardRef.current = false;
+        return;
+      }
       const durationSec = Math.max(1, Math.round((Date.now() - startTs) / 1000));
       const blob = new Blob(chunks, {
         type: recorder.mimeType || (kind === "voice" ? "audio/webm" : "video/webm"),
@@ -1014,19 +1251,15 @@ export function MessagesPage() {
       const ext = blob.type.includes("mp4") ? "mp4" : "webm";
       const name =
         kind === "voice" ? `voice-${Date.now()}.${ext}` : `circle-${Date.now()}.${ext}`;
-      sendMessage(
-        "",
-        {
-          kind,
-          url,
-          name,
-          mime: blob.type,
-          size: blob.size,
-          compressed: false,
-          durationSec,
-        },
-        { forChatId: chatId },
-      );
+      setPendingRecordedAttachment({
+        chatId,
+        kind,
+        url,
+        name,
+        mime: blob.type,
+        size: blob.size,
+        durationSec,
+      });
     };
 
     try {
@@ -1035,15 +1268,34 @@ export function MessagesPage() {
       } else {
         stream.getTracks().forEach((t) => t.stop());
         setIsRecordingMedia(false);
+        setRecordingStartedAt(null);
+        setRecordingElapsedSec(0);
+        stopRecordingVisualizer();
       }
     } catch {
       stream.getTracks().forEach((t) => t.stop());
       setIsRecordingMedia(false);
+      setRecordingStartedAt(null);
+      setRecordingElapsedSec(0);
+      stopRecordingVisualizer();
     }
   }
 
   function onVoiceControlPointerDown(e: ReactPointerEvent<HTMLButtonElement>) {
     if (pendingFile) {
+      return;
+    }
+    if (pendingRecordedAttachment) {
+      return;
+    }
+    recordingAtPointerDownRef.current = Boolean(recordSessionRef.current);
+    startedByCurrentPressRef.current = false;
+    voicePointerStartYRef.current = e.clientY;
+    voicePointerTypeRef.current = e.pointerType as "mouse" | "touch" | "pen";
+    voiceDragIntentRef.current = false;
+    setVoiceControlLiftPx(0);
+    e.preventDefault();
+    if (recordingAtPointerDownRef.current) {
       return;
     }
     try {
@@ -1058,6 +1310,7 @@ export function MessagesPage() {
       if (!recordPressingRef.current) {
         return;
       }
+      startedByCurrentPressRef.current = true;
       const kind: "voice" | "video_note" =
         voiceUiModeRef.current === "circle" ? "video_note" : "voice";
       void startMediaRecord(kind);
@@ -1074,8 +1327,21 @@ export function MessagesPage() {
     }
     recordPressingRef.current = false;
     cancelRecordHoldTimer();
+    const hadDragIntent = voiceDragIntentRef.current;
+    voiceDragIntentRef.current = false;
+    setVoiceControlLiftPx(0);
+    if (pendingRecordedAttachment) {
+      sendRecordedByMic();
+      return;
+    }
     if (recordSessionRef.current) {
-      finalizeMediaRecording();
+      if (!recordingAtPointerDownRef.current && startedByCurrentPressRef.current) {
+        // Отпускание после long-press не останавливает запись.
+        suppressNextVoiceClickRef.current = true;
+      }
+      return;
+    }
+    if (hadDragIntent) {
       return;
     }
     if (!pendingFile) {
@@ -1093,7 +1359,35 @@ export function MessagesPage() {
     }
     recordPressingRef.current = false;
     cancelRecordHoldTimer();
+    voiceDragIntentRef.current = false;
+    setVoiceControlLiftPx(0);
     if (recordSessionRef.current) {
+      finalizeMediaRecording();
+    }
+  }
+
+  function onVoiceControlPointerMove(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (!recordPressingRef.current) {
+      return;
+    }
+    const lift = Math.max(0, voicePointerStartYRef.current - e.clientY);
+    const isTouch = voicePointerTypeRef.current === "touch";
+    const dragThreshold = isTouch ? 5 : 8;
+    const maxLift = isTouch ? 28 : 20;
+    voiceDragIntentRef.current = voiceDragIntentRef.current || lift > dragThreshold;
+    setVoiceControlLiftPx(Math.min(maxLift, lift));
+  }
+
+  function onVoiceControlClick() {
+    if (suppressNextVoiceClickRef.current) {
+      suppressNextVoiceClickRef.current = false;
+      return;
+    }
+    if (pendingRecordedAttachment) {
+      sendRecordedByMic();
+      return;
+    }
+    if (isRecordingMedia) {
       finalizeMediaRecording();
     }
   }
@@ -1128,8 +1422,29 @@ export function MessagesPage() {
   }
 
   const trimmedDraft = draft.trim();
+  const isRecordingVideoNote =
+    isRecordingMedia && recordSessionRef.current?.kind === "video_note";
+  const isPendingVideoNote = pendingRecordedAttachment?.kind === "video_note";
+  const videoNoteRemainingSec = Math.max(
+    0,
+    VIDEO_NOTE_MAX_DURATION_SEC - recordingElapsedSec,
+  );
   const showSendPlane = trimmedDraft.length > 0;
   const showVoiceUi = !pendingFile && !showSendPlane;
+
+  useEffect(() => {
+    if (!isRecordingVideoNote) {
+      videoNoteAutoStopRef.current = false;
+      return;
+    }
+    if (
+      recordingElapsedSec >= VIDEO_NOTE_MAX_DURATION_SEC &&
+      !videoNoteAutoStopRef.current
+    ) {
+      videoNoteAutoStopRef.current = true;
+      finalizeMediaRecording();
+    }
+  }, [isRecordingVideoNote, recordingElapsedSec]);
 
   const chatListPanel = (
     <div className="flex h-full flex-col">
@@ -1151,32 +1466,21 @@ export function MessagesPage() {
           </label>
         </div>
         <div className="hidden lg:block">
-          {desktopSearchExpanded ? (
-            <label
-              htmlFor="messages-search"
-              className="flex min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] px-3 py-2"
-            >
-              <IconSearch className="h-4 w-4 shrink-0 text-neutral-500" />
-              <input
-                id="messages-search"
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Поиск"
-                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
-              />
-            </label>
-          ) : (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-xl border border-white/[0.08] bg-[#2a2a2a] text-neutral-500 hover:text-neutral-300"
-                aria-label="Поиск по чатам"
-              >
-                <IconSearch className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          <label
+            htmlFor="messages-search"
+            className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] px-3 py-2"
+          >
+            <IconSearch className="h-4 w-4 shrink-0 text-neutral-500" />
+            <input
+              id="messages-search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск"
+              aria-label="Поиск по чатам"
+              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
+            />
+          </label>
         </div>
       </div>
       <ul className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -1189,8 +1493,8 @@ export function MessagesPage() {
                 type="button"
                 onClick={() => openChat(chat.id)}
                 className={cn(
-                  "flex w-full items-center gap-3 border-b border-white/[0.04] px-4 py-3 text-left transition-colors lg:px-1 lg:py-2.5",
-                  "lg:gap-2.5",
+                  "flex w-full items-center gap-3 border-b border-white/[0.04] px-4 py-3 text-left transition-colors lg:px-0.5 lg:py-2",
+                  "lg:gap-2",
                   expandedLeftPane
                     ? "lg:items-start lg:justify-start"
                     : "lg:justify-center",
@@ -1372,6 +1676,18 @@ export function MessagesPage() {
       >
         {messages.map((message) => {
           const showMessageBubble = message.text.trim().length > 0;
+          const emojiParts = showMessageBubble && !message.attachment
+            ? splitEmojiAware(message.text).filter(
+                (p) => p.kind === "emoji" || p.value.trim().length > 0,
+              )
+            : [];
+          const emojiOnlyMessage = emojiParts.length > 0 && emojiParts.every((p) => p.kind === "emoji");
+          const singleEmojiMessage = emojiOnlyMessage && emojiParts.length === 1;
+          const multiEmojiMessage = emojiOnlyMessage && emojiParts.length > 1;
+
+          // Bubble: одиночный смайлик — без фона/рамки
+          const hasBubble = showMessageBubble && !singleEmojiMessage;
+
           return (
           <div
             key={message.id}
@@ -1380,22 +1696,74 @@ export function MessagesPage() {
             <div
               className={cn(
                 "max-w-[82%] text-sm leading-relaxed",
-                showMessageBubble
+                hasBubble
                   ? "rounded-2xl px-3 py-2"
                   : "px-0 py-0",
                 message.fromMe
-                  ? showMessageBubble
-                    ? "rounded-br-md border border-[var(--accent-primary)]/28 bg-[color-mix(in_srgb,var(--accent-primary)_14%,var(--block-bg-secondary))] text-[var(--text-primary)]"
+                  ? hasBubble
+                    ? "rounded-br-md border border-[var(--accent-primary)]/28 bg-[#356492] text-[var(--text-primary)] shadow-[0_1px_6px_rgba(0,0,0,0.22)]"
                     : "text-[var(--text-primary)]"
-                  : showMessageBubble
+                  : hasBubble
                     ? "rounded-bl-md bg-[#2a2a2a] text-neutral-200"
                     : "text-neutral-200",
               )}
             >
               {message.text ? (
-                <div className="text-[15px] leading-relaxed">
-                  <MarkdownEmojiText text={message.text} emojiSize="1.55em" />
-                </div>
+                singleEmojiMessage ? (
+                  // Один смайлик — большой, без фона
+                  <div className="flex items-end gap-1.5">
+                    <div className="leading-none" style={{ fontSize: "2.8em" }}>
+                      <MarkdownEmojiText text={message.text} emojiSize="2.8em" />
+                    </div>
+                    <p
+                      className={cn(
+                        "mb-[2px] flex shrink-0 items-center gap-1 text-[13px] leading-none lg:text-[12px]",
+                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                      )}
+                    >
+                      <span>{message.time}</span>
+                      {message.fromMe && message.status ? (
+                        <MessageStatusTicks status={message.status} />
+                      ) : null}
+                    </p>
+                  </div>
+                ) : multiEmojiMessage ? (
+                  // Несколько смайликов — в bubble, время снизу
+                  <>
+                    <div className="leading-snug" style={{ fontSize: "1.65em" }}>
+                      <MarkdownEmojiText text={message.text} emojiSize="1.65em" />
+                    </div>
+                    <p
+                      className={cn(
+                        "mt-0.5 flex items-center justify-end gap-1 text-[13px] leading-none lg:text-[12px]",
+                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                      )}
+                    >
+                      <span>{message.time}</span>
+                      {message.fromMe && message.status ? (
+                        <MessageStatusTicks status={message.status} />
+                      ) : null}
+                    </p>
+                  </>
+                ) : (
+                  // Текст (с возможными смайликами) — inline время
+                  <div className="flex min-w-0 items-end gap-2">
+                    <div className="min-w-0 flex-1 text-[15px] leading-snug">
+                      <MarkdownEmojiText text={message.text} emojiSize="1.15em" />
+                    </div>
+                    <p
+                      className={cn(
+                        "mb-[1px] flex shrink-0 items-center gap-1 text-[13px] leading-none lg:text-[12px]",
+                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                      )}
+                    >
+                      <span>{message.time}</span>
+                      {message.fromMe && message.status ? (
+                        <MessageStatusTicks status={message.status} />
+                      ) : null}
+                    </p>
+                  </div>
+                )
               ) : null}
               {message.attachment ? (
                 (() => {
@@ -1527,19 +1895,66 @@ export function MessagesPage() {
                   );
                 })()
               ) : null}
-              <p className="mt-1 flex items-center justify-end gap-1 text-[11px] text-neutral-500">
-                <span>{message.time}</span>
-                {message.fromMe && message.status ? (
-                  <MessageStatusTicks status={message.status} />
-                ) : null}
-              </p>
+              {!message.text ? (
+                <p
+                  className={cn(
+                    "mt-1 flex items-center justify-end gap-1 text-[13px] leading-none lg:text-[12px]",
+                    message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                  )}
+                >
+                  <span>{message.time}</span>
+                  {message.fromMe && message.status ? (
+                    <MessageStatusTicks status={message.status} />
+                  ) : null}
+                </p>
+              ) : null}
             </div>
           </div>
           );
         })}
       </div>
+      {isRecordingVideoNote ? (
+        <div className="pointer-events-none absolute inset-x-0 top-[72px] bottom-[92px] z-[6] grid place-items-center">
+          <div className="relative">
+            <video
+              ref={recordingPreviewVideoRef}
+              muted
+              playsInline
+              autoPlay
+              className="h-[300px] w-[300px] rounded-full bg-black object-cover shadow-[0_20px_50px_rgba(0,0,0,0.55)] [transform:scaleX(-1)] sm:h-[320px] sm:w-[320px]"
+            />
+            <svg
+              viewBox="0 0 100 100"
+              className="absolute -inset-[10px] h-[320px] w-[320px] sm:h-[340px] sm:w-[340px]"
+              aria-hidden
+            >
+              {(() => {
+                const r = 48;
+                const c = Math.PI * 2 * r;
+                const progress = 1 - videoNoteRemainingSec / VIDEO_NOTE_MAX_DURATION_SEC;
+                return (
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r={r}
+                    fill="none"
+                    stroke="white"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    transform="rotate(-90 50 50)"
+                    strokeDasharray={`${Math.max(0.01, c * progress)} ${c}`}
+                    strokeDashoffset="0"
+                    className="transition-[stroke-dasharray] duration-75 ease-linear"
+                  />
+                );
+              })()}
+            </svg>
+            <div className="absolute inset-0 rounded-full ring-1 ring-black/35" aria-hidden />
+          </div>
+        </div>
+      ) : null}
 
-      <footer className="mt-auto border-t border-white/[0.06] bg-[#202020] p-3">
+      <footer className="mt-auto border-t border-white/[0.06] bg-[#202020] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
         {pendingFile ? (
           <div className="mb-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] p-2.5">
             <p className="truncate text-xs text-neutral-300">
@@ -1583,7 +1998,7 @@ export function MessagesPage() {
             </div>
           </div>
         ) : null}
-        <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-[#2a2a2a] p-2">
+        <div className={cn("flex gap-2 rounded-2xl border border-white/[0.08] bg-[#2a2a2a] p-2", isRecordingMedia ? "items-center" : "items-end")}>
           <input
             ref={fileInputRef}
             type="file"
@@ -1599,35 +2014,112 @@ export function MessagesPage() {
             aria-label="Прикрепить файл"
             onClick={() => fileInputRef.current?.click()}
           >
-            <IconPaperclip className="h-4 w-4" />
+            <IconPaperclip className="h-[18px] w-[18px]" />
           </button>
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage(draft);
-              }
-            }}
-            placeholder="Написать сообщение..."
-            className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-white outline-none placeholder:text-neutral-600"
-          />
-          <button
-            type="button"
-            className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-neutral-200"
-            aria-label="Эмодзи"
-            onClick={() => setEmojiOpen(true)}
-          >
-            <IconSmile className="h-4 w-4" />
-          </button>
+          {isRecordingMedia || pendingRecordedAttachment ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-[#1f1f1f] px-2.5 py-2">
+              {!isRecordingVideoNote && !isPendingVideoNote ? (
+                <span
+                  className={cn(
+                    "h-2.5 w-2.5 shrink-0 rounded-full bg-red-500",
+                    isRecordingMedia && "animate-pulse",
+                  )}
+                  aria-hidden
+                />
+              ) : null}
+              {!isRecordingVideoNote && !isPendingVideoNote ? (
+                <span className="shrink-0 font-mono text-xs text-neutral-200">
+                  {formatVoiceClock(
+                    isRecordingMedia
+                      ? recordingElapsedSec
+                      : (pendingRecordedAttachment?.durationSec ?? 0),
+                  )}
+                </span>
+              ) : null}
+              {isRecordingVideoNote ? (
+                <div className="min-w-0 flex-1" />
+              ) : pendingRecordedAttachment?.kind === "video_note" ? (
+                <div className="flex min-w-0 flex-1 items-center">
+                  <span className="truncate text-xs text-neutral-300">
+                    Кружок готов к отправке
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="grid h-6 min-w-0 flex-1 items-center gap-x-[2px]"
+                  style={{ gridTemplateColumns: `repeat(${recordingBars.length}, minmax(2px, 1fr))` }}
+                >
+                  {recordingBars.map((bar, i) => {
+                    const t =
+                      recordingBars.length > 1 ? i / (recordingBars.length - 1) : 0;
+                    const edgeDist = Math.abs(t * 2 - 1); // 0 в центре, 1 на краях
+                    const envelope = 1 - edgeDist * 0.72; // волновой профиль по ширине
+                    const h = Math.min(16, 2 + bar * 14 * envelope + envelope * 2.6);
+                    return (
+                      <span
+                        key={i}
+                        className="mx-auto w-[2px] rounded-[2px] bg-neutral-400/80 transition-[height,opacity] duration-75"
+                        style={{
+                          height: `${h}px`,
+                          opacity: 0.3 + bar * 0.7,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                className="shrink-0 text-xs text-neutral-400 transition-colors hover:text-neutral-200"
+                onClick={() =>
+                  isRecordingMedia
+                    ? finalizeMediaRecording({ discard: true })
+                    : clearPendingRecordedAttachment()
+                }
+              >
+                Отмена
+              </button>
+              {!isRecordingMedia && pendingRecordedAttachment ? (
+                <button
+                  type="button"
+                  className="shrink-0 text-xs text-neutral-200 transition-colors hover:text-white"
+                  onClick={sendRecordedByMic}
+                >
+                  Отправить
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendComposerMessage();
+                  }
+                }}
+                placeholder="Написать сообщение..."
+                className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-white outline-none placeholder:text-neutral-600"
+              />
+              <button
+                type="button"
+                className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-neutral-200"
+                aria-label="Эмодзи"
+                onClick={() => setEmojiOpen(true)}
+              >
+                <IconSmile className="h-[18px] w-[18px]" />
+              </button>
+            </>
+          )}
           {showSendPlane ? (
             <button
               type="button"
               className="grid h-9 w-9 place-items-center rounded-xl text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-white"
-              onClick={() => sendMessage(draft)}
+              onClick={sendComposerMessage}
               aria-label="Отправить"
             >
               <IconSendPlane className="h-5 w-5" />
@@ -1636,26 +2128,40 @@ export function MessagesPage() {
             <button
               type="button"
               className={cn(
-                "grid h-9 w-9 place-items-center rounded-xl text-neutral-300 transition-colors select-none touch-manipulation",
+                "grid h-9 w-9 place-items-center rounded-xl text-neutral-300 transition-[color,background-color,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none touch-none",
                 isRecordingMedia
                   ? "bg-red-600/20 text-red-200 ring-2 ring-red-500/55"
                   : "hover:bg-white/[0.06] hover:text-white",
+                voiceControlLiftPx > 1 &&
+                  "z-10 bg-red-600/25 text-red-100 shadow-[0_8px_20px_rgba(239,68,68,0.35)] ring-2 ring-red-500/60",
               )}
+              style={{
+                transform:
+                  voiceControlLiftPx > 0
+                    ? `translateY(${-voiceControlLiftPx}px) scale(${1 + voiceControlLiftPx * 0.0045})`
+                    : undefined,
+              }}
               onPointerDown={onVoiceControlPointerDown}
+              onPointerMove={onVoiceControlPointerMove}
               onPointerUp={onVoiceControlPointerUp}
               onPointerCancel={onVoiceControlPointerCancel}
+              onClick={onVoiceControlClick}
               aria-label={
                 isRecordingMedia
-                  ? "Отпустите для отправки"
+                  ? "Отпустите, чтобы остановить запись"
+                  : pendingRecordedAttachment
+                    ? "Нажмите, чтобы отправить запись"
                   : voiceUiMode === "circle"
                     ? "Видеокружок: удерживайте для записи, нажмите для голоса"
                     : "Голос: удерживайте для записи, нажмите для видеокружка"
               }
             >
-              {voiceUiMode === "circle" ? (
-                <IconVideoCircle className="h-5 w-5" />
+              {pendingRecordedAttachment ? (
+                <IconMic className="h-[18px] w-[18px]" />
+              ) : voiceUiMode === "circle" ? (
+                <IconVideoCircle className="h-[18px] w-[18px]" />
               ) : (
-                <IconMic className="h-5 w-5" />
+                <IconMic className="h-[18px] w-[18px]" />
               )}
             </button>
           ) : (
@@ -1676,7 +2182,7 @@ export function MessagesPage() {
   );
 
   return (
-    <div className="font-sans text-white lg:flex lg:min-h-[calc(100dvh-8.5rem)] lg:flex-col lg:pt-6">
+    <div className="itd-messages-root flex min-h-0 flex-col overflow-hidden font-sans text-white lg:h-[calc(100dvh-8.5rem)] lg:min-h-[calc(100dvh-8.5rem)] lg:pt-6">
       <EmojiMartModal
         open={emojiOpen}
         onClose={() => setEmojiOpen(false)}
@@ -1728,13 +2234,15 @@ export function MessagesPage() {
       </h1>
 
       {!isDesktopLg ? (
-        <div>
+        <div
+          className="min-h-0 flex-1 overflow-hidden"
+        >
           {!mobileChatOpen ? (
-            <section className="overflow-hidden rounded-3xl border border-white/[0.06] bg-[#202020]">
+            <section className="h-full overflow-hidden rounded-3xl border border-white/[0.06] bg-[#202020]">
               {chatListPanel}
             </section>
           ) : (
-            <section className="flex min-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-3xl border border-white/[0.06] bg-[#1e1e1e]">
+            <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-white/[0.06] bg-[#1e1e1e]">
               {chatViewPanel}
             </section>
           )}

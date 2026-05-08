@@ -1,6 +1,5 @@
 import {
   IconBell,
-  IconEvent,
   IconFeed,
   IconMessages,
   IconSearch,
@@ -11,7 +10,7 @@ import {
   useAppNavStore,
   type AppMainScreen,
 } from "@/stores/app-nav-store";
-import { useRef, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 const TABS = [
   { id: "feed", label: "Лента" },
@@ -65,7 +64,6 @@ export function MobileNav() {
   const screen = useAppNavStore((s) => s.screen);
   const setScreen = useAppNavStore((s) => s.setScreen);
   const active = screenToTab(screen);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   return (
     <div
@@ -73,23 +71,10 @@ export function MobileNav() {
       aria-label="Мобильная навигация"
     >
       <div className="itd-mnav-bar">
-        <button type="button" className="itd-mnav-event" aria-label="Ивент">
-          <span className="itd-mnav-event-inner">
-            <IconEvent
-              className="itd-mnav-icon itd-mnav-icon--glow text-[color:var(--accent-secondary)]"
-              width={24}
-              height={24}
-            />
-          </span>
-        </button>
-
         <div className="itd-mnav-track">
-          {TABS.map((tab, i) => (
+          {TABS.map((tab) => (
             <button
               key={tab.id}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
               type="button"
               className={cn(
                 "itd-mnav-tab",

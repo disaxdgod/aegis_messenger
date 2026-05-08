@@ -121,7 +121,7 @@ export function MarkdownEmojiText({
     <span
       className={cn(
         "whitespace-pre-wrap break-words leading-relaxed [&_a]:break-all",
-        "[&_em-emoji]:inline-block [&_em-emoji]:align-[-0.2em] [&_em-emoji]:leading-none",
+        "[&_em-emoji]:inline-block [&_em-emoji]:align-[-0.12em] [&_em-emoji]:leading-none",
         "[&_.itd-spoiler]:cursor-pointer [&_.itd-spoiler]:rounded-[0.35rem] [&_.itd-spoiler]:bg-white/12 [&_.itd-spoiler]:px-1 [&_.itd-spoiler]:text-transparent",
         "[&_.itd-spoiler]:transition-colors [&_.itd-spoiler]:[text-shadow:0_0_8px_rgba(255,255,255,0.5)]",
         "[&_.itd-spoiler--revealed]:bg-transparent [&_.itd-spoiler--revealed]:text-inherit [&_.itd-spoiler--revealed]:[text-shadow:none]",
