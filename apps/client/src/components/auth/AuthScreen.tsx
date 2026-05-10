@@ -120,11 +120,11 @@ export function AuthScreen() {
     signIn(
       mode === "sign-up"
         ? {
-            message: "Аккаунт успешно создан.",
+            message: "Аккаунт создан. Добро пожаловать!",
             openOnboarding: true,
           }
         : {
-            message: "Вход выполнен успешно.",
+            message: "Добро пожаловать!",
             openOnboarding: false,
           },
     );

@@ -1,14 +1,24 @@
 import { CommentDrawer } from "@/components/messenger/CommentDrawer";
 import { MessengerConfirmModal } from "@/components/messenger/MessengerConfirmModal";
-import { IconMessages } from "@/components/messenger/nav-icons";
+import { PostImagePreview } from "@/components/messenger/PostImagePreview";
+import { PostMediaCarousel } from "@/components/messenger/PostMediaCarousel";
+import {
+  RepostToDirectModal,
+  type RepostForwardPayload,
+  type RepostPollPreview,
+} from "@/components/messenger/RepostToDirectModal";
+import { SuccessToast } from "@/components/messenger/SuccessToast";
+import { IconMessages, IconRepost } from "@/components/messenger/nav-icons";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { TextFormatSelectionModal } from "@/components/messenger/TextFormatSelectionModal";
 import { cn } from "@/lib/utils";
 import type { SelectionSnapshot } from "@/lib/markdown-selection";
-import type { PostEntity } from "@/stores/posts-store";
+import type { PostEntity, PostMediaItem } from "@/stores/posts-store";
+import { useDmInboxStore } from "@/stores/dm-inbox-store";
 import { usePostsStore } from "@/stores/posts-store";
 import { useAppNavStore } from "@/stores/app-nav-store";
 import { useCommentsStore } from "@/stores/comments-store";
+import { usePostCommentsRouteStore } from "@/stores/post-comments-route-store";
 import { useProfileStore } from "@/stores/profile-store";
 import { useEffect, useRef, useState } from "react";
 
@@ -101,24 +111,6 @@ function IconHeart({ filled, className }: { filled?: boolean; className?: string
       aria-hidden
     >
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
-
-function IconRepost({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      aria-hidden
-    >
-      <g fill="none" fillRule="evenodd">
-        <path
-          fill="currentColor"
-          fillRule="nonzero"
-          d="M11.996 3.725A2.15 2.15 0 0 0 10 5.87l-.001 2.117-.02.005a9.904 9.904 0 0 0-7.827 10.721c.083.811 1.116 1.103 1.611.455l.187-.237a9.08 9.08 0 0 1 5.836-3.265l.213-.026.001 2.494a2.15 2.15 0 0 0 3.476 1.692l7.824-6.132a2.15 2.15 0 0 0 0-3.384l-7.824-6.132a2.15 2.15 0 0 0-1.326-.458zm.154 1.795a.35.35 0 0 1 .216.075l7.824 6.132a.35.35 0 0 1 0 .55l-7.824 6.133a.35.35 0 0 1-.566-.276l-.001-3.447a.9.9 0 0 0-.915-.9l-.233.004-.342.017a10.9 10.9 0 0 0-6.119 2.365l-.174.144.024-.135a8.1 8.1 0 0 1 6.968-6.537.9.9 0 0 0 .791-.893L11.8 5.87a.35.35 0 0 1 .35-.35"
-        />
-      </g>
     </svg>
   );
 }
@@ -257,21 +249,22 @@ function PostEditModal({ open, post, onClose }: PostEditModalProps) {
         onClick={onClose}
       >
         <div
-          className="w-full max-w-[480px] rounded-2xl border border-white/[0.08] bg-[#1e1e1e] p-5 shadow-2xl"
+          className="w-full max-w-[480px] rounded-2xl border border-theme-border bg-theme-card p-5 shadow-2xl"
+          style={{ animation: "aegis-modal-in 0.22s cubic-bezier(0.22,1,0.36,1)" }}
           onClick={(e) => e.stopPropagation()}
         >
           <h2
             id="post-edit-title"
-            className="text-lg font-semibold tracking-tight text-white"
+            className="text-lg font-semibold tracking-tight text-theme-text"
           >
             Редактировать пост
           </h2>
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-1 text-xs text-theme-text-2">
             Выделите фрагмент текста — откроется форматирование (Markdown).
           </p>
           <label
             htmlFor={`post-edit-${post.id}`}
-            className="mt-4 block text-sm text-neutral-400"
+            className="mt-4 block text-sm text-theme-text-2"
           >
             Текст
           </label>
@@ -283,25 +276,25 @@ function PostEditModal({ open, post, onClose }: PostEditModalProps) {
             onChange={(e) => setDraft(e.target.value)}
             onMouseUp={scheduleFormatOpen}
             onSelect={scheduleFormatOpen}
-            className="mt-1.5 w-full resize-y rounded-xl border border-white/10 bg-[#151515] px-3 py-2.5 text-[15px] text-white outline-none placeholder:text-neutral-600 focus-visible:border-white/20"
+            className="mt-1.5 w-full resize-y rounded-xl border border-theme-border bg-theme-bg px-3 py-2.5 text-[15px] text-theme-text outline-none placeholder:text-theme-text-2 focus-visible:border-theme-border"
             placeholder="Текст поста…"
           />
           {(post.media.length > 0 || post.poll) ? (
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-theme-text-2">
               Вложения и опрос при редактировании не меняются.
             </p>
           ) : null}
           <div className="mt-5 flex justify-end gap-2">
             <button
               type="button"
-              className="rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-white/5"
+              className="rounded-full border border-theme-border px-4 py-2 text-sm font-medium text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:scale-95 active:bg-theme-active"
               onClick={onClose}
             >
               Отмена
             </button>
             <button
               type="button"
-              className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-neutral-200"
+              className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition-all duration-150 hover:bg-neutral-200 active:scale-95 active:bg-neutral-300"
               onClick={save}
             >
               Сохранить
@@ -311,6 +304,135 @@ function PostEditModal({ open, post, onClose }: PostEditModalProps) {
       </div>
     </>
   );
+}
+
+/** Заполняем ширину поста; вертикаль обрезается по max-height без боковых полос. */
+const FEED_MEDIA_MAX_H = "max-h-[min(92vh,720px)]";
+const feedImageClass = cn(
+  FEED_MEDIA_MAX_H,
+  "block w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.01]",
+);
+
+function MediaAttachmentsBlock({
+  media,
+  onImageClick,
+}: {
+  media: PostMediaItem[];
+  onImageClick: (url: string) => void;
+}) {
+  const photos = media.filter((m) => m.kind === "image");
+  const videos = media.filter((m) => m.kind === "video");
+
+  if (photos.length >= 2) {
+    return (
+      <div className="space-y-2">
+        <PostMediaCarousel items={photos} onImageClick={onImageClick} />
+        {videos.length > 0 ? (
+          <div
+            className={cn(
+              "grid gap-2",
+              videos.length === 1 ? "grid-cols-1" : "grid-cols-2",
+            )}
+          >
+            {videos.map((m) => (
+              <div
+                key={m.id}
+                className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-black"
+              >
+                <video
+                  src={m.url}
+                  controls
+                  className={`block w-full ${FEED_MEDIA_MAX_H} object-cover object-center`}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "grid gap-2",
+        media.length === 1 ? "grid-cols-1" : "grid-cols-2",
+      )}
+    >
+      {media.map((m) =>
+        m.kind === "video" ? (
+          <div
+            key={m.id}
+            className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-black"
+          >
+            <video
+              src={m.url}
+              controls
+              className={`block w-full ${FEED_MEDIA_MAX_H} object-cover object-center`}
+            />
+          </div>
+        ) : (
+          <button
+            key={m.id}
+            type="button"
+            className="group relative block w-full overflow-hidden rounded-xl border border-white/[0.06] transition-all duration-200 hover:border-white/[0.12] hover:brightness-105 active:scale-[0.99] active:brightness-95"
+            aria-label="Открыть изображение"
+            onClick={() => onImageClick(m.url)}
+          >
+            <img src={m.url} alt="" className={feedImageClass} />
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+function pollPreviewFromPost(poll: NonNullable<PostEntity["poll"]>): RepostPollPreview {
+  return {
+    question: poll.question,
+    optionTexts: poll.options.map((o) => o.text),
+  };
+}
+
+function buildRepostForwardPayload(
+  post: PostEntity,
+  authorLine: string,
+): RepostForwardPayload {
+  const pollPreview = post.poll ? pollPreviewFromPost(post.poll) : undefined;
+  const rawText = post.text.trim();
+  if (rawText.length > 0) {
+    return {
+      postId: post.id,
+      authorLine,
+      summaryLine: rawText.length > 140 ? `${rawText.slice(0, 140)}…` : rawText,
+      bodyLine: rawText.length > 480 ? `${rawText.slice(0, 480)}…` : rawText,
+      pollPreview,
+    };
+  }
+  if (post.poll) {
+    return {
+      postId: post.id,
+      authorLine,
+      summaryLine: "",
+      bodyLine: "",
+      pollPreview,
+    };
+  }
+  if (post.media.length > 0) {
+    return {
+      postId: post.id,
+      authorLine,
+      summaryLine: "",
+      bodyLine: "",
+    };
+  }
+  return {
+    postId: post.id,
+    authorLine,
+    summaryLine: "Запись без текста",
+    bodyLine: "Пустая запись.",
+    pollPreview,
+  };
 }
 
 type PostCardProps = {
@@ -323,6 +445,7 @@ export function PostCard({ post }: PostCardProps) {
   const lastName = useProfileStore((s) => s.lastName);
   const username = useProfileStore((s) => s.username);
   const toggleLike = usePostsStore((s) => s.toggleLike);
+  const incrementReposts = usePostsStore((s) => s.incrementReposts);
   const incrementViews = usePostsStore((s) => s.incrementViews);
   const removePost = usePostsStore((s) => s.removePost);
   const voteInPoll = usePostsStore((s) => s.voteInPoll);
@@ -335,15 +458,26 @@ export function PostCard({ post }: PostCardProps) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const postQueryValue = usePostCommentsRouteStore((s) => s.postQueryValue);
+  const pushPostQuery = usePostCommentsRouteStore((s) => s.pushPostQuery);
+  const closePostQuery = usePostCommentsRouteStore((s) => s.closePostQuery);
+  const commentsOpen =
+    postQueryValue !== null &&
+    (postQueryValue === String(post.seq) || postQueryValue === post.id);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [votersListOpen, setVotersListOpen] = useState(false);
   const [selectedPollOptionId, setSelectedPollOptionId] = useState<string | null>(null);
   const [votersSearch, setVotersSearch] = useState("");
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<{
+    urls: string[];
+    index: number;
+  } | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
+  const [repostModalOpen, setRepostModalOpen] = useState(false);
+  const [repostPayload, setRepostPayload] = useState<RepostForwardPayload | null>(
+    null,
+  );
   const menuRef = useRef<HTMLDivElement>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -368,43 +502,11 @@ export function PostCard({ post }: PostCardProps) {
   }, [menuOpen]);
 
   useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!imagePreviewUrl) {
-      return;
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setImagePreviewUrl(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [imagePreviewUrl]);
-
-  useEffect(() => {
     if (!votersListOpen) {
       setSelectedPollOptionId(null);
       setVotersSearch("");
     }
   }, [votersListOpen]);
-
-  function showToast(msg: string) {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-    setActionToast(msg);
-    toastTimerRef.current = setTimeout(() => {
-      setActionToast(null);
-      toastTimerRef.current = null;
-    }, 2800);
-  }
 
   function handleDelete() {
     setDeleteConfirmOpen(true);
@@ -416,13 +518,45 @@ export function PostCard({ post }: PostCardProps) {
   }
 
   function handleReport() {
-    showToast("Жалоба отправлена. Спасибо, что помогаете сообществу.");
+    setActionToast("Жалоба отправлена");
     setMenuOpen(false);
   }
 
   function openEdit() {
     setEditOpen(true);
     setMenuOpen(false);
+  }
+
+  function openImagePreview(url: string) {
+    const urls = post.media.filter((m) => m.kind === "image").map((m) => m.url);
+    const idx = urls.indexOf(url);
+    setImagePreview({
+      urls,
+      index: idx >= 0 ? idx : 0,
+    });
+  }
+
+  function handleRepostSendToDirect(chatId: string, comment: string) {
+    if (!repostPayload) {
+      return;
+    }
+    useDmInboxStore.getState().forwardFeedPostToChat(chatId, {
+      comment,
+      authorLine: repostPayload.authorLine,
+      summaryLine: repostPayload.summaryLine,
+      bodyLine: repostPayload.bodyLine,
+      postId: repostPayload.postId,
+      postCreatedAt: post.createdAt,
+      pollPreview: repostPayload.pollPreview,
+      mediaUrls: post.media
+        .filter((m) => m.kind === "image")
+        .slice(0, 4)
+        .map((m) => m.url),
+    });
+    incrementReposts(post.id);
+    const peerName =
+      useDmInboxStore.getState().chats.find((c) => c.id === chatId)?.name ?? "";
+    setActionToast(peerName ? `Отправлено · ${peerName}` : "Отправлено");
   }
 
   const viewedRef = useRef(false);
@@ -489,7 +623,7 @@ export function PostCard({ post }: PostCardProps) {
 
   return (
     <article
-      className="relative rounded-2xl border border-white/[0.06] bg-[#242424] p-4 sm:p-5"
+      className="relative rounded-2xl border border-theme-border bg-theme-card p-4 sm:p-5"
     >
       <PostEditModal
         open={editOpen}
@@ -500,7 +634,10 @@ export function PostCard({ post }: PostCardProps) {
       <CommentDrawer
         open={commentsOpen}
         postId={post.id}
-        onClose={() => setCommentsOpen(false)}
+        post={post}
+        postAuthorName={displayName}
+        postAuthorAvatar={avatarObjectUrl}
+        onClose={closePostQuery}
       />
 
       <MessengerConfirmModal
@@ -522,22 +659,22 @@ export function PostCard({ post }: PostCardProps) {
           onClick={() => setVotersListOpen(false)}
         >
           <div
-            className="w-full max-w-[520px] rounded-2xl border border-white/[0.08] bg-[#1e1e1e] p-4 shadow-2xl"
+            className="w-full max-w-[520px] rounded-2xl border border-theme-border bg-theme-card p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <p
               id={`poll-voters-title-${post.id}`}
-              className="text-base font-semibold text-white"
+              className="text-base font-semibold text-theme-text"
             >
               {selectedPollOption ? "Кто выбрал вариант" : "Кто проголосовал"}
             </p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-theme-text-2">
               {formatVotedLabel(uniquePollVoters.length)}
             </p>
             {selectedPollOption ? (
               <>
-                <div className="mt-3 rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5">
-                  <p className="text-sm text-neutral-200">
+                <div className="mt-3 rounded-lg border border-theme-border bg-theme-hover p-2.5">
+                  <p className="text-sm text-theme-text">
                     <MarkdownEmojiText text={selectedPollOption.text} />
                   </p>
                   <input
@@ -545,7 +682,7 @@ export function PostCard({ post }: PostCardProps) {
                     value={votersSearch}
                     onChange={(e) => setVotersSearch(e.target.value)}
                     placeholder="Поиск по имени или @username"
-                    className="mt-2 w-full rounded-lg border border-white/10 bg-[#242424] px-3 py-2 text-sm text-white outline-none placeholder:text-neutral-600 focus-visible:border-white/20"
+                    className="mt-2 w-full rounded-lg border border-theme-border bg-theme-card px-3 py-2 text-sm text-theme-text outline-none placeholder:text-theme-text-2 focus-visible:border-theme-border"
                   />
                 </div>
                 <ul className="mt-3 max-h-[300px] space-y-1.5 overflow-auto pr-1">
@@ -553,7 +690,7 @@ export function PostCard({ post }: PostCardProps) {
                     <li key={vote.voterId}>
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-2 text-left hover:bg-white/[0.04]"
+                        className="flex w-full items-center gap-2 rounded-lg border border-theme-border bg-theme-hover px-2.5 py-2 text-left hover:bg-theme-active"
                         onClick={() => {
                           setVotersListOpen(false);
                           setSelectedPollOptionId(null);
@@ -561,7 +698,7 @@ export function PostCard({ post }: PostCardProps) {
                           setScreen("profile");
                         }}
                       >
-                        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/[0.08] bg-[#252525] text-xs text-neutral-200">
+                        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card-2 text-xs text-theme-text">
                           {vote.avatarUrl ? (
                             <img
                               src={vote.avatarUrl}
@@ -573,9 +710,9 @@ export function PostCard({ post }: PostCardProps) {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate text-sm text-neutral-200">{vote.name}</p>
+                          <p className="truncate text-sm text-theme-text">{vote.name}</p>
                           {vote.username ? (
-                            <p className="truncate text-xs text-neutral-500">@{vote.username}</p>
+                            <p className="truncate text-xs text-theme-text-2">@{vote.username}</p>
                           ) : null}
                         </div>
                       </button>
@@ -583,7 +720,7 @@ export function PostCard({ post }: PostCardProps) {
                   ))}
                 </ul>
                 {filteredSelectedVotes.length === 0 ? (
-                  <p className="mt-3 text-xs text-neutral-600">Ничего не найдено</p>
+                  <p className="mt-3 text-xs text-theme-text-2">Ничего не найдено</p>
                 ) : null}
               </>
             ) : (
@@ -592,17 +729,17 @@ export function PostCard({ post }: PostCardProps) {
                   <li key={option.id}>
                     <button
                       type="button"
-                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.02] p-2.5 text-left hover:bg-white/[0.04]"
+                      className="w-full rounded-lg border border-theme-border bg-theme-hover p-2.5 text-left hover:bg-theme-active"
                       onClick={() => {
                         setSelectedPollOptionId(option.id);
                         setVotersSearch("");
                       }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate text-sm text-neutral-200">
+                        <p className="min-w-0 truncate text-sm text-theme-text">
                           <MarkdownEmojiText text={option.text} />
                         </p>
-                        <span className="shrink-0 text-xs text-neutral-500">
+                        <span className="shrink-0 text-xs text-theme-text-2">
                           {option.votes.length}
                         </span>
                       </div>
@@ -612,7 +749,7 @@ export function PostCard({ post }: PostCardProps) {
                             <button
                               key={vote.voterId}
                               type="button"
-                              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-white/[0.08] bg-[#252525] text-xs text-neutral-200"
+                              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card-2 text-xs text-theme-text"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setVotersListOpen(false);
@@ -633,13 +770,13 @@ export function PostCard({ post }: PostCardProps) {
                             </button>
                           ))}
                           {option.votes.length > option.previewVotes.length ? (
-                            <span className="text-xs text-neutral-500">
+                            <span className="text-xs text-theme-text-2">
                               +{option.votes.length - option.previewVotes.length}
                             </span>
                           ) : null}
                         </div>
                       ) : (
-                        <p className="mt-2 text-xs text-neutral-600">Нет голосов</p>
+                        <p className="mt-2 text-xs text-theme-text-2">Нет голосов</p>
                       )}
                     </button>
                   </li>
@@ -650,7 +787,7 @@ export function PostCard({ post }: PostCardProps) {
               {selectedPollOption ? (
                 <button
                   type="button"
-                  className="rounded-full border border-white/15 px-4 py-1.5 text-sm text-neutral-300 hover:bg-white/5"
+                  className="rounded-full border border-theme-border px-4 py-1.5 text-sm text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:scale-95 active:bg-theme-active"
                   onClick={() => {
                     setSelectedPollOptionId(null);
                     setVotersSearch("");
@@ -661,7 +798,7 @@ export function PostCard({ post }: PostCardProps) {
               ) : null}
               <button
                 type="button"
-                className="rounded-full border border-white/15 px-4 py-1.5 text-sm text-neutral-300 hover:bg-white/5"
+                className="rounded-full border border-theme-border px-4 py-1.5 text-sm text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:scale-95 active:bg-theme-active"
                 onClick={() => setVotersListOpen(false)}
               >
                 Закрыть
@@ -670,36 +807,33 @@ export function PostCard({ post }: PostCardProps) {
           </div>
         </div>
       ) : null}
-      {imagePreviewUrl ? (
-        <div
-          className="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Предпросмотр изображения"
-          onClick={() => setImagePreviewUrl(null)}
-        >
-          <img
-            src={imagePreviewUrl}
-            alt=""
-            className="max-h-[95vh] max-w-[95vw] object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+      {imagePreview ? (
+        <PostImagePreview
+          urls={imagePreview.urls}
+          initialIndex={imagePreview.index}
+          onClose={() => setImagePreview(null)}
+        />
       ) : null}
 
-      {actionToast ? (
-        <div
-          className="pointer-events-none absolute bottom-3 left-1/2 z-[80] max-w-[min(100%,280px)] -translate-x-1/2 rounded-full border border-white/10 bg-[#2a2a2a] px-4 py-2 text-center text-xs text-neutral-200 shadow-lg"
-          role="status"
-        >
-          {actionToast}
-        </div>
-      ) : null}
+      <SuccessToast
+        message={actionToast}
+        onDismiss={() => setActionToast(null)}
+      />
+
+      <RepostToDirectModal
+        open={repostModalOpen}
+        payload={repostPayload}
+        onClose={() => {
+          setRepostModalOpen(false);
+          setRepostPayload(null);
+        }}
+        onConfirmSend={handleRepostSendToDirect}
+      />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/[0.06] bg-[#1a1a1a] text-lg text-neutral-200">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card text-lg text-theme-text transition-transform duration-200 hover:scale-105 active:scale-95">
             {avatarObjectUrl ? (
               <img
                 src={avatarObjectUrl}
@@ -711,13 +845,13 @@ export function PostCard({ post }: PostCardProps) {
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold leading-snug text-white">
+            <p className="truncate text-[15px] font-semibold leading-snug text-theme-text">
               {displayName}
             </p>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-theme-text-2">
               <span>{formatPostTime(post.createdAt)}</span>
               {post.editedAt != null ? (
-                <span className="ml-1.5 text-neutral-600">· ред.</span>
+                <span className="ml-1.5 text-theme-text-2">· ред.</span>
               ) : null}
             </p>
           </div>
@@ -726,8 +860,8 @@ export function PostCard({ post }: PostCardProps) {
           <button
             type="button"
             className={cn(
-              "mt-0.5 rounded-lg p-1.5 text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-neutral-300",
-              menuOpen && "bg-white/[0.06] text-neutral-300",
+              "mt-0.5 rounded-lg p-1.5 text-theme-text-2 transition-all duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90 active:bg-theme-active",
+              menuOpen && "bg-theme-hover text-theme-text",
             )}
             aria-label="Действия с постом"
             aria-expanded={menuOpen}
@@ -738,14 +872,15 @@ export function PostCard({ post }: PostCardProps) {
           </button>
           {menuOpen ? (
             <div
-              className="absolute right-0 top-full z-[70] mt-1 min-w-[220px] overflow-hidden rounded-xl border border-white/[0.1] bg-[#1a1a1a] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+              className="absolute right-0 top-full z-[70] mt-1 min-w-[220px] overflow-hidden rounded-xl border border-theme-border bg-theme-card py-1 shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
               role="menu"
               aria-orientation="vertical"
+              style={{ animation: "aegis-menu-in 0.15s cubic-bezier(0.22,1,0.36,1)" }}
             >
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/[0.06]"
+                className="flex w-full px-4 py-2.5 text-left text-sm text-theme-text transition-all duration-150 hover:bg-theme-hover active:bg-theme-active active:scale-[0.98]"
                 onClick={openEdit}
               >
                 Редактировать пост
@@ -753,16 +888,16 @@ export function PostCard({ post }: PostCardProps) {
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full px-4 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10"
+                className="flex w-full px-4 py-2.5 text-left text-sm text-red-500 transition-all duration-150 hover:bg-red-500/10 active:bg-red-500/15 active:scale-[0.98]"
                 onClick={handleDelete}
               >
                 Удалить пост
               </button>
-              <div className="my-0.5 h-px bg-white/[0.06]" aria-hidden />
+              <div className="my-0.5 h-px bg-theme-border" aria-hidden />
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full px-4 py-2.5 text-left text-sm text-neutral-300 transition-colors hover:bg-white/[0.06]"
+                className="flex w-full px-4 py-2.5 text-left text-sm text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:bg-theme-active active:scale-[0.98]"
                 onClick={handleReport}
               >
                 Пожаловаться
@@ -775,7 +910,7 @@ export function PostCard({ post }: PostCardProps) {
       {/* Body */}
       <div className="mt-3 space-y-3">
         {post.text ? (
-          <p className="text-[15px] leading-relaxed text-white">
+          <p className="text-[15px] leading-relaxed text-theme-text">
             <MarkdownEmojiText
               text={post.text}
               onHashtagClick={(key) => openHashtagFeed(key)}
@@ -784,51 +919,24 @@ export function PostCard({ post }: PostCardProps) {
         ) : null}
 
         {post.media.length > 0 ? (
-          <div
-            className={cn(
-              "grid gap-2",
-              post.media.length === 1 ? "grid-cols-1" : "grid-cols-2",
-            )}
-          >
-            {post.media.map((m) =>
-              m.kind === "video" ? (
-                <video
-                  key={m.id}
-                  src={m.url}
-                  controls
-                  className="max-h-[min(70vh,420px)] w-full rounded-xl border border-white/[0.06] bg-black object-contain"
-                />
-              ) : (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="block w-full"
-                  aria-label="Открыть изображение"
-                  onClick={() => setImagePreviewUrl(m.url)}
-                >
-                  <img
-                    src={m.url}
-                    alt=""
-                    className="max-h-[min(70vh,420px)] w-full rounded-xl border border-white/[0.06] object-contain"
-                  />
-                </button>
-              ),
-            )}
-          </div>
+          <MediaAttachmentsBlock
+            media={post.media}
+            onImageClick={(url) => openImagePreview(url)}
+          />
         ) : null}
 
         {post.poll ? (
-          <div className="rounded-xl border border-white/[0.08] bg-[#1a1a1a] p-4">
-            <p className="font-medium text-white">
+          <div className="rounded-xl border border-theme-border bg-theme-card p-4">
+            <p className="font-medium text-theme-text">
               <MarkdownEmojiText text={post.poll.question} />
             </p>
             {pollEnabledSettings.length > 0 ? (
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-theme-text-2">
                 {pollEnabledSettings.join(" · ")}
               </p>
             ) : null}
             {post.poll.endsAt ? (
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-theme-text-2">
                 {Date.now() > post.poll.endsAt
                   ? "Голосование завершено"
                   : `Осталось: ${formatRemainingPollTime(post.poll.endsAt)}`}
@@ -850,10 +958,10 @@ export function PostCard({ post }: PostCardProps) {
                       type="button"
                       disabled={pollEnded}
                       className={cn(
-                        "w-full overflow-hidden rounded-lg border border-white/[0.08] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-80",
+                        "w-full overflow-hidden rounded-lg border border-theme-border text-left transition-colors disabled:cursor-not-allowed disabled:opacity-80",
                         votedByMe
                           ? "bg-[var(--accent-primary)]/15"
-                          : "bg-white/[0.04] hover:bg-white/[0.07]",
+                          : "bg-theme-hover hover:bg-theme-active",
                       )}
                       onClick={() =>
                         voteInPoll(post.id, opt.id, {
@@ -870,9 +978,9 @@ export function PostCard({ post }: PostCardProps) {
                           style={{ width: `${percent}%` }}
                           aria-hidden
                         />
-                        <div className="relative flex items-center justify-between gap-3 text-sm text-neutral-200">
+                        <div className="relative flex items-center justify-between gap-3 text-sm text-theme-text">
                           <MarkdownEmojiText text={opt.text} />
-                          <span className="shrink-0 text-xs text-neutral-300">
+                          <span className="shrink-0 text-xs text-theme-text-2">
                             {percent}% · {opt.votes.length}
                           </span>
                         </div>
@@ -893,7 +1001,7 @@ export function PostCard({ post }: PostCardProps) {
                     <div
                       key={vote.voterId}
                       className={cn(
-                        "flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-[#1a1a1a] bg-[#252525] text-xs text-neutral-300",
+                        "flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card-2 text-xs text-theme-text",
                         index > 0 && "-ml-5",
                       )}
                     >
@@ -909,30 +1017,30 @@ export function PostCard({ post }: PostCardProps) {
                     </div>
                   ))}
                 </div>
-                <p className="text-sm text-neutral-400">
+                <p className="text-sm text-theme-text-2">
                   {formatVotedLabel(uniquePollVoters.length)}
                 </p>
               </button>
             ) : null}
             {pollHintText ? (
-              <p className="mt-3 text-xs text-neutral-500">{pollHintText}</p>
+              <p className="mt-3 text-xs text-theme-text-2">{pollHintText}</p>
             ) : null}
           </div>
         ) : null}
       </div>
 
       {/* Footer — счётчики */}
-      <div className="mt-4 flex items-center justify-between border-t border-white/[0.05] pt-3">
-        <div className="flex items-center gap-4">
-          {/* Лайк */}
+      <div className="mt-4 flex items-center justify-between border-t border-theme-border pt-3">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => toggleLike(post.id)}
             className={cn(
-              "group flex items-center gap-1.5 text-sm transition-colors",
+              "group flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-all duration-150 touch-manipulation",
+              "active:scale-90",
               liked
-                ? "text-rose-400"
-                : "text-neutral-500 hover:text-rose-400",
+                ? "text-rose-400 hover:bg-rose-500/10"
+                : "text-theme-text-2 hover:bg-theme-hover hover:text-rose-400",
             )}
             aria-label={liked ? "Убрать лайк" : "Поставить лайк"}
             aria-pressed={liked}
@@ -940,42 +1048,51 @@ export function PostCard({ post }: PostCardProps) {
             <IconHeart
               filled={liked}
               className={cn(
-                "h-[18px] w-[18px] transition-transform active:scale-90",
-                liked && "fill-rose-400 stroke-rose-400",
+                "h-[18px] w-[18px] shrink-0",
+                liked
+                  ? "fill-rose-400 stroke-rose-400 aegis-heart-liked"
+                  : "transition-transform group-active:scale-75",
               )}
             />
-            <span>{fmtCount(likes)}</span>
+            <span className="tabular-nums">{fmtCount(likes)}</span>
           </button>
 
-          {/* Комментарии */}
           <button
             type="button"
-            className="flex items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-300"
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm text-theme-text-2 transition-all duration-150 touch-manipulation",
+              "hover:bg-theme-hover hover:text-theme-text active:scale-90 active:bg-theme-active",
+            )}
             aria-label="Комментарии"
-            onClick={() => setCommentsOpen(true)}
+            onClick={() => pushPostQuery(String(post.seq))}
           >
-            <IconMessages className="h-[18px] w-[18px]" />
-            <span>{fmtCount(commentCount)}</span>
+            <IconMessages className="h-[18px] w-[18px] transition-transform group-active:scale-75" />
+            <span className="tabular-nums">{fmtCount(commentCount)}</span>
           </button>
 
-          {/* Репост */}
           <button
             type="button"
-            className="flex items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-300"
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm text-theme-text-2 transition-all duration-150 touch-manipulation",
+              "hover:bg-theme-hover hover:text-[var(--accent-repost)] active:scale-90 active:bg-theme-active",
+            )}
             aria-label="Репост"
+            onClick={() => {
+              setRepostPayload(buildRepostForwardPayload(post, displayName));
+              setRepostModalOpen(true);
+            }}
           >
-            <IconRepost className="h-5 w-5" />
-            <span>{fmtCount(reposts)}</span>
+            <IconRepost className="h-[18px] w-[18px]" />
+            <span className="tabular-nums">{fmtCount(reposts)}</span>
           </button>
         </div>
 
-        {/* Просмотры */}
         <div
-          className="flex items-center gap-1.5 text-sm text-neutral-600"
+          className="flex shrink-0 items-center gap-1.5 text-sm text-theme-text-2"
           aria-label={`${views} просмотров`}
         >
-          <IconEye className="h-[18px] w-[18px]" />
-          <span>{fmtCount(views)}</span>
+          <IconEye className="h-[18px] w-[18px] shrink-0" />
+          <span className="tabular-nums">{fmtCount(views)}</span>
         </div>
       </div>
     </article>

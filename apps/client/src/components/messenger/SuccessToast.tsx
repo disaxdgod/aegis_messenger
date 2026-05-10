@@ -12,17 +12,17 @@ type SuccessToastProps = {
   onDismiss: () => void;
 };
 
-const ENTER_MS = 360;
-const VISIBLE_MS = 2000;
+const ENTER_MS = 380;
+const VISIBLE_MS = 2600;
 const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 function CheckGlyph() {
   return (
-    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600">
+    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 shadow-[0_2px_8px_rgba(16,185,129,0.35)]">
       <svg
         viewBox="0 0 14 11"
-        width="11"
-        height="9"
+        width="10"
+        height="8"
         className="text-white"
         fill="none"
         aria-hidden
@@ -30,7 +30,7 @@ function CheckGlyph() {
         <path
           d="M1.5 5.5 5.2 9.2 12.5 1.5"
           stroke="currentColor"
-          strokeWidth="1.85"
+          strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -47,9 +47,7 @@ export function SuccessToast({ message, onDismiss }: SuccessToastProps) {
   const dismissedRef = useRef(false);
 
   const finishExit = useCallback(() => {
-    if (dismissedRef.current) {
-      return;
-    }
+    if (dismissedRef.current) return;
     dismissedRef.current = true;
     onDismiss();
   }, [onDismiss]);
@@ -79,49 +77,35 @@ export function SuccessToast({ message, onDismiss }: SuccessToastProps) {
     }, ENTER_MS + VISIBLE_MS);
 
     return () => {
-      if (rafIdsRef.current.a != null) {
-        cancelAnimationFrame(rafIdsRef.current.a);
-      }
-      if (rafIdsRef.current.b != null) {
-        cancelAnimationFrame(rafIdsRef.current.b);
-      }
-      if (exitTimerRef.current != null) {
-        clearTimeout(exitTimerRef.current);
-      }
+      if (rafIdsRef.current.a != null) cancelAnimationFrame(rafIdsRef.current.a);
+      if (rafIdsRef.current.b != null) cancelAnimationFrame(rafIdsRef.current.b);
+      if (exitTimerRef.current != null) clearTimeout(exitTimerRef.current);
     };
   }, [message]);
 
   useEffect(() => {
-    if (!exiting) {
-      return;
-    }
-    const fallback = window.setTimeout(() => {
-      finishExit();
-    }, ENTER_MS + 120);
+    if (!exiting) return;
+    const fallback = window.setTimeout(() => finishExit(), ENTER_MS + 120);
     return () => clearTimeout(fallback);
   }, [exiting, finishExit]);
 
   function handleTransitionEnd(e: TransitionEvent<HTMLDivElement>) {
-    if (e.target !== e.currentTarget || e.propertyName !== "transform") {
-      return;
-    }
-    if (exiting) {
-      finishExit();
-    }
+    if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
+    if (exiting) finishExit();
   }
 
-  if (!message) {
-    return null;
-  }
+  if (!message) return null;
 
   const offscreen = !entered || exiting;
 
   return (
     <div
       role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={cn(
-        "fixed left-1/2 z-[70] flex w-full max-w-[min(92vw,440px)] -translate-x-1/2 justify-center px-4",
-        "bottom-24 lg:bottom-8",
+        "pointer-events-none fixed inset-x-0 bottom-24 z-[80] flex justify-center px-4",
+        "lg:bottom-8",
       )}
     >
       <div
@@ -130,20 +114,29 @@ export function SuccessToast({ message, onDismiss }: SuccessToastProps) {
           transitionProperty: "transform, opacity",
           transitionDuration: `${ENTER_MS}ms`,
           transitionTimingFunction: EASE,
-          transform: offscreen ? "translateY(calc(100% + 32px))" : "translateY(0)",
+          transform: offscreen ? "translateY(calc(100% + 28px))" : "translateY(0)",
           opacity: offscreen ? 0 : 1,
         }}
         className={cn(
-          "inline-flex max-w-full items-center gap-2.5 rounded-[10px] bg-zinc-800 px-5 py-3.5 outline outline-1 outline-offset-[-1px] outline-zinc-800 will-change-transform",
+          "pointer-events-auto inline-flex w-max max-w-[min(calc(100vw-2rem),400px)] items-center gap-3 will-change-transform",
+          "rounded-2xl border border-white/[0.09] bg-[#1e1e20]/95 px-4 py-3.5 shadow-[0_8px_40px_rgba(0,0,0,0.55)]",
+          "backdrop-blur-xl",
         )}
       >
         <CheckGlyph />
-        <div className="min-w-0 max-w-[min(72vw,320px)] text-left text-xl font-medium leading-5 text-white">
+
+        <p className="min-w-0 shrink text-left text-[14px] font-medium leading-snug text-white/90">
           {message}
-        </div>
+        </p>
+
         <button
           type="button"
-          className="ml-0.5 shrink-0 self-center rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+          className={cn(
+            "ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl",
+            "text-white/30 transition-all duration-150",
+            "hover:bg-white/[0.08] hover:text-white/70",
+            "active:scale-90",
+          )}
           aria-label="Закрыть уведомление"
           onClick={() => {
             if (exitTimerRef.current != null) {
@@ -153,7 +146,9 @@ export function SuccessToast({ message, onDismiss }: SuccessToastProps) {
             setExiting(true);
           }}
         >
-          <span className="block text-lg leading-none">×</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-3.5 w-3.5">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
         </button>
       </div>
     </div>

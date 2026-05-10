@@ -2,6 +2,27 @@
 <html lang="ru" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      FOUC-prevention: читаем тему из localStorage до рендера React.
+      Если ничего нет — смотрим на системные настройки (prefers-color-scheme).
+      Дефолт HTML уже data-theme="dark", поэтому при любом сбое остаёмся тёмными.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("aegis-theme");
+          var theme =
+            stored === "dark" || stored === "light"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          document.documentElement.setAttribute("data-theme", theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#121212");
+        } catch (_) {}
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/icons.svg" />
     <meta
       name="viewport"

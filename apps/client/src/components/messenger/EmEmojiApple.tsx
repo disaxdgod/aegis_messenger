@@ -36,7 +36,7 @@ export function EmEmojiApple({ native, className, emojiMartSize = "1.15em" }: Em
   return (
     <span
       ref={wrapRef}
-      className={cn("inline-block align-[-0.2em] leading-none", className)}
+      className={cn("inline-block align-middle leading-none", className)}
       aria-hidden
     />
   );

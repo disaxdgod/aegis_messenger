@@ -33,6 +33,42 @@
   --color-ds-danger-soft: oklch(0.63 0.22 25 / 0.25);
 }
 
+/**
+ * Семантические цветовые токены, которые переключаются вместе с темой.
+ * @theme inline — Tailwind v4 генерирует утилиты, ссылающиеся на CSS-переменные
+ * напрямую (runtime-resolution), а не статически на этапе сборки.
+ *
+ * Классы: bg-theme-bg, text-theme-text, border-theme-border …
+ */
+@theme inline {
+  /* Фоны */
+  --color-theme-bg:        var(--bg-primary);
+  --color-theme-bg-2:      var(--bg-secondary);
+  --color-theme-card:      var(--block-bg);
+  --color-theme-card-2:    var(--block-bg-secondary);
+  --color-theme-hover:     var(--bg-hover);
+  --color-theme-active:    var(--bg-active);
+
+  /* Текст */
+  --color-theme-text:      var(--text-primary);
+  --color-theme-text-2:    var(--text-secondary);
+  --color-theme-text-inv:  var(--text-inverse);
+
+  /* Акцент */
+  --color-theme-accent:    var(--accent-primary);
+  --color-theme-accent-2:  var(--accent-secondary);
+  --color-theme-like:      var(--accent-like);
+  --color-theme-repost:    var(--accent-repost);
+
+  /* Граница */
+  --color-theme-border:    var(--border-color);
+  --color-theme-card-3:    var(--block-hover-bg);
+
+  /* Кнопка primary */
+  --color-theme-btn-bg:    var(--btn-primary-bg);
+  --color-theme-btn-text:  var(--btn-primary-text);
+}
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;

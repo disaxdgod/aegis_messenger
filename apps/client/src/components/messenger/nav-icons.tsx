@@ -172,6 +172,37 @@ export function IconPoll(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/** Иконка репоста (заливка currentColor, как у кнопки в карточке поста). */
+export function IconRepost(props: SVGProps<SVGSVGElement>) {
+  const { className, ...rest } = props;
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden {...rest}>
+      <g fill="none" fillRule="evenodd">
+        <path
+          fill="currentColor"
+          fillRule="nonzero"
+          d="M11.996 3.725A2.15 2.15 0 0 0 10 5.87l-.001 2.117-.02.005a9.904 9.904 0 0 0-7.827 10.721c.083.811 1.116 1.103 1.611.455l.187-.237a9.08 9.08 0 0 1 5.836-3.265l.213-.026.001 2.494a2.15 2.15 0 0 0 3.476 1.692l7.824-6.132a2.15 2.15 0 0 0 0-3.384l-7.824-6.132a2.15 2.15 0 0 0-1.326-.458zm.154 1.795a.35.35 0 0 1 .216.075l7.824 6.132a.35.35 0 0 1 0 .55l-7.824 6.133a.35.35 0 0 1-.566-.276l-.001-3.447a.9.9 0 0 0-.915-.9l-.233.004-.342.017a10.9 10.9 0 0 0-6.119 2.365l-.174.144.024-.135a8.1 8.1 0 0 1 6.968-6.537.9.9 0 0 0 .791-.893L11.8 5.87a.35.35 0 0 1 .35-.35"
+        />
+      </g>
+    </svg>
+  );
+}
+
+/** Отправка сообщения (как в композере личных сообщений). */
+export function IconSendPlane(props: SVGProps<SVGSVGElement>) {
+  const { className, ...rest } = props;
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden {...rest}>
+      <g fill="none" fillRule="evenodd">
+        <path
+          fill="currentColor"
+          d="M5.739 15.754q-1.029 2.782-1.293 3.91c-.553 2.362-.956 2.894 1.107 1.771 2.062-1.122 12.046-6.683 14.274-7.919 2.904-1.611 2.942-1.485-.156-3.196-2.36-1.302-12.227-6.718-14.118-7.782-1.892-1.063-1.66-.59-1.107 1.772q.268 1.142 1.311 3.944a4 4 0 0 0 2.988 2.531l5.765 1.117a.1.1 0 0 1 0 .196l-5.778 1.116a4 4 0 0 0-2.993 2.54"
+        />
+      </g>
+    </svg>
+  );
+}
+
 export function IconCheckVerified(props: SVGProps<SVGSVGElement>) {
   const { className, ...rest } = props;
   return (

@@ -35,13 +35,15 @@ export function YandexGlyph(props: SVGProps<SVGSVGElement>) {
       viewBox="0 0 24 24"
       width={24}
       height={24}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       {...props}
     >
-      <rect x="3" y="3" width="18" height="18" rx="4" fill="#FC3F1D" />
+      <rect width="24" height="24" rx="12" fill="#FF0000" />
       <path
-        fill="#fff"
-        d="M12.4 17V7h-1.3v6.1L8.2 7H6.7l3.4 6.4-1.2 3.6h1.4l1-3.1 1.9 3.1H14l-1.6-3.5z"
+        d="M13.4624 7.60621H12.5336C10.8307 7.60621 9.93631 8.46063 9.93631 9.72504C9.93631 11.1604 10.5555 11.8268 11.8284 12.6812L12.8775 13.3818L9.85032 17.8758H7.59703L10.3147 13.8602C8.74946 12.7495 7.87221 11.673 7.87221 9.84466C7.87221 7.555 9.47187 6 12.5163 6H15.5436V17.8758H13.4624V7.60621Z"
+        fill="white"
       />
     </svg>
   );

@@ -186,7 +186,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
           onChange={(e) => onFilesSelected(e.target.files)}
         />
         <div className="flex gap-3.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/[0.06] bg-[#1a1a1a] text-lg text-neutral-200">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card text-lg text-theme-text">
             {avatarObjectUrl ? (
               <img src={avatarObjectUrl} alt="" className="h-full w-full object-cover" />
             ) : (
@@ -218,7 +218,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
                 }
               }}
               placeholder="Что нового?"
-              className="w-full resize-none bg-transparent text-[15px] leading-relaxed text-white outline-none placeholder:text-neutral-500"
+              className="w-full resize-none bg-transparent text-[15px] leading-relaxed text-theme-text outline-none placeholder:text-theme-text-2"
             />
 
             {media.length > 0 && (
@@ -235,7 +235,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
                     )}
                     <button
                       type="button"
-                      className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/70 text-sm text-white hover:bg-black/90"
+                      className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-md bg-black/70 text-sm text-white transition-[background-color,transform] duration-100 hover:bg-black/90 active:scale-90"
                       aria-label="Убрать вложение"
                       onClick={() => removeMediaItem(m.id)}
                     >
@@ -247,17 +247,17 @@ export function PostComposer({ className, style }: PostComposerProps) {
             )}
 
             {poll && (
-              <div className="mt-3 rounded-xl border border-white/[0.08] bg-[#1a1a1a] p-3 text-sm">
+              <div className="mt-3 rounded-xl border border-theme-border bg-theme-card p-3 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-medium text-white">
+                    <p className="font-medium text-theme-text">
                       <MarkdownEmojiText text={poll.question} />
                     </p>
-                    <p className="mt-1 text-neutral-500">{poll.options.length} вариантов</p>
+                    <p className="mt-1 text-theme-text-2">{poll.options.length} вариантов</p>
                   </div>
                   <button
                     type="button"
-                    className="shrink-0 text-neutral-400 hover:text-white"
+                    className="shrink-0 text-theme-text-2 transition-[color,transform] duration-150 hover:text-theme-text active:scale-95"
                     onClick={() => setPoll(null)}
                   >
                     Убрать
@@ -266,11 +266,11 @@ export function PostComposer({ className, style }: PostComposerProps) {
               </div>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
-              <div className="flex items-center gap-0.5 text-neutral-500">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-theme-border pt-3">
+              <div className="flex items-center gap-0.5 text-theme-text-2">
                 <button
                   type="button"
-                  className="rounded-lg p-2 transition-colors hover:bg-white/[0.06] hover:text-neutral-300"
+                  className="rounded-lg p-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
                   aria-label="Прикрепить фото или видео"
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -279,8 +279,8 @@ export function PostComposer({ className, style }: PostComposerProps) {
                 <button
                   type="button"
                   className={cn(
-                    "rounded-lg p-2 transition-colors hover:bg-white/[0.06] hover:text-neutral-300",
-                    emojiOpen && "bg-white/[0.06] text-neutral-300",
+                    "rounded-lg p-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90",
+                    emojiOpen && "bg-theme-hover text-theme-text",
                   )}
                   aria-label="Эмодзи"
                   aria-expanded={emojiOpen}
@@ -291,7 +291,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg p-2 transition-colors hover:bg-white/[0.06] hover:text-neutral-300"
+                  className="rounded-lg p-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
                   aria-label="Нарисовать изображение для поста"
                   onClick={() => setSketchOpen(true)}
                 >
@@ -299,7 +299,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg p-2 transition-colors hover:bg-white/[0.06] hover:text-neutral-300"
+                  className="rounded-lg p-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
                   aria-label="Опрос"
                   onClick={() => setPollModalOpen(true)}
                 >
@@ -309,7 +309,7 @@ export function PostComposer({ className, style }: PostComposerProps) {
               <button
                 type="button"
                 disabled={!canPublish}
-                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-[background-color,transform] duration-150 hover:bg-neutral-100 active:scale-[0.96] active:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={publish}
               >
                 Опубликовать

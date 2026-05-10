@@ -10,11 +10,10 @@ import { usePostsStore } from "@/stores/posts-store";
 import { useProfileStore } from "@/stores/profile-store";
 import { useMemo, useState, type FormEvent } from "react";
 
-const CARD = "#1e1e1e";
-const SURFACE = "#272727";
-/** Плашка хештега (как на макете): тёмный фон, две строки текста. */
-const HASHTAG_PLAQUE_BG = "#242424";
-const HASHTAG_BLUE = "#71AAEB";
+const CARD = "var(--block-bg)";
+const SURFACE = "var(--block-bg-secondary)";
+const HASHTAG_PLAQUE_BG = "var(--block-bg)";
+const HASHTAG_BLUE = "var(--link-color)";
 
 type SearchPerson = {
   id: string;
@@ -30,10 +29,10 @@ function searchNeedle(raw: string): string {
 
 /** Строка «Люди» (аватар + текст). */
 const RESULT_ROW_CLASS =
-  "flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] px-3 py-3 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.03]";
+  "flex w-full items-center gap-3 rounded-2xl border border-theme-border px-3 py-3 text-left transition-[border-color,background-color,transform] duration-150 hover:border-theme-border hover:bg-theme-hover active:scale-[0.985]";
 
 const AVATAR_BOX_CLASS =
-  "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#1a1a1a] text-xl leading-none";
+  "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-theme-border bg-theme-card text-xl leading-none";
 
 function getAvatarFallback(name: string): string {
   const trimmed = name.trim();
@@ -55,8 +54,8 @@ function HashtagResultRow({
       type="button"
       onClick={onPick}
       className={cn(
-        "w-full rounded-[22px] px-5 py-3.5 text-left transition-colors",
-        "border border-white/[0.05] hover:border-white/[0.1] hover:bg-white/[0.03]",
+        "w-full rounded-[22px] px-5 py-3.5 text-left transition-[border-color,background-color,transform] duration-150",
+            "border border-theme-border hover:border-theme-border hover:bg-theme-hover active:scale-[0.985]",
       )}
       style={{ backgroundColor: HASHTAG_PLAQUE_BG }}
     >
@@ -66,7 +65,7 @@ function HashtagResultRow({
       >
         #{tag.display}
       </div>
-      <div className="mt-1 truncate text-[13px] leading-snug text-neutral-500">
+      <div className="mt-1 truncate text-[13px] leading-snug text-theme-text-2">
         {fmtCountShort(tag.count)} постов
       </div>
     </button>
@@ -155,7 +154,7 @@ export function SearchPage() {
   }
 
   return (
-    <div className="font-sans text-white">
+    <div className="font-sans text-theme-text">
       <h1 className="mb-5 text-2xl font-bold tracking-tight">Поиск</h1>
 
       <form onSubmit={onSubmit} className="mb-6">
@@ -163,11 +162,11 @@ export function SearchPage() {
           Поиск людей и хештегов
         </label>
         <div
-          className="flex items-center gap-3 rounded-full border border-white/[0.06] px-4 py-3"
+          className="flex items-center gap-3 rounded-full border border-theme-border px-4 py-3"
           style={{ backgroundColor: SURFACE }}
         >
           <IconSearch
-            className="shrink-0 text-neutral-500"
+            className="shrink-0 text-theme-text-2"
             width={20}
             height={20}
             aria-hidden
@@ -178,7 +177,7 @@ export function SearchPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Поиск людей и хештегов"
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-neutral-500"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-theme-text outline-none placeholder:text-theme-text-2"
             autoComplete="off"
             enterKeyHint="search"
           />
@@ -188,7 +187,7 @@ export function SearchPage() {
       {showLiveResults ? (
         <div className="space-y-8">
           <section aria-label="Люди">
-            <h2 className="mb-3 text-lg font-semibold text-white">Люди</h2>
+            <h2 className="mb-3 text-lg font-semibold text-theme-text">Люди</h2>
             {filteredPeople.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {filteredPeople.map((p) => (
@@ -212,14 +211,14 @@ export function SearchPage() {
                       </div>
                       <div className="min-w-0 flex-1 text-left">
                         <div className="flex items-center gap-1.5">
-                          <span className="truncate text-[15px] font-semibold text-white">
+                          <span className="truncate text-[15px] font-semibold text-theme-text">
                             {p.displayName}
                           </span>
                           {p.verified ? (
                             <IconCheckVerified className="shrink-0" />
                           ) : null}
                         </div>
-                        <div className="truncate text-sm text-neutral-500">
+                        <div className="truncate text-sm text-theme-text-2">
                           @{p.username}
                         </div>
                       </div>
@@ -229,7 +228,7 @@ export function SearchPage() {
               </ul>
             ) : (
               <p
-                className="rounded-2xl border border-white/[0.06] px-4 py-6 text-center text-sm text-neutral-500"
+                className="rounded-2xl border border-theme-border px-4 py-6 text-center text-sm text-theme-text-2"
                 style={{ backgroundColor: SURFACE }}
               >
                 Никого не найдено
@@ -238,7 +237,7 @@ export function SearchPage() {
           </section>
 
           <section aria-label="Хештеги">
-            <h2 className="mb-3 text-lg font-semibold text-white">Хештеги</h2>
+            <h2 className="mb-3 text-lg font-semibold text-theme-text">Хештеги</h2>
             {filteredHashtags.length > 0 ? (
               <ul className="flex flex-col gap-3">
                 {filteredHashtags.map((t) => (
@@ -252,7 +251,7 @@ export function SearchPage() {
               </ul>
             ) : (
               <p
-                className="rounded-2xl border border-white/[0.06] px-4 py-6 text-center text-sm text-neutral-500"
+                className="rounded-2xl border border-theme-border px-4 py-6 text-center text-sm text-theme-text-2"
                 style={{ backgroundColor: SURFACE }}
               >
                 Хештегов не найдено
@@ -262,11 +261,11 @@ export function SearchPage() {
         </div>
       ) : (
         <section
-          className="rounded-3xl border border-white/[0.06] p-5 sm:p-6"
+          className="rounded-3xl border border-theme-border p-5 sm:p-6"
           style={{ backgroundColor: CARD }}
           aria-label="Популярные хештеги"
         >
-          <h2 className="mb-4 text-lg font-semibold text-white">
+          <h2 className="mb-4 text-lg font-semibold text-theme-text">
             Популярные хештеги
           </h2>
           {hashtagIndex.length > 0 ? (
@@ -282,7 +281,7 @@ export function SearchPage() {
             </ul>
           ) : (
             <p
-              className="rounded-2xl border border-white/[0.06] px-4 py-10 text-center text-sm text-neutral-500"
+              className="rounded-2xl border border-theme-border px-4 py-10 text-center text-sm text-theme-text-2"
               style={{ backgroundColor: SURFACE }}
             >
               Пока нет хештегов — добавьте #тег в текст поста

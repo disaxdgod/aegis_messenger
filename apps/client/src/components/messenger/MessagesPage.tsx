@@ -1,38 +1,22 @@
 import { EmojiMartModal } from "@/components/messenger/EmojiMartModal";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { MessengerConfirmModal } from "@/components/messenger/MessengerConfirmModal";
-import { IconMessages, IconPaperclip, IconSearch, IconSmile } from "@/components/messenger/nav-icons";
+import { PostImagePreview } from "@/components/messenger/PostImagePreview";
+import { SendMediaAttachmentModal } from "@/components/messenger/SendMediaAttachmentModal";
+import {
+  IconMessages,
+  IconPaperclip,
+  IconSearch,
+  IconSendPlane,
+  IconSmile,
+} from "@/components/messenger/nav-icons";
 import { splitEmojiAware } from "@/lib/split-emoji-text";
 import { cn } from "@/lib/utils";
+import type { InboxChatItem as ChatItem, InboxMessageItem as MessageItem } from "@/stores/dm-inbox-store";
+import { inboxNowTimeLabel, useDmInboxStore } from "@/stores/dm-inbox-store";
+import { useAppNavStore } from "@/stores/app-nav-store";
+import { usePostsStore } from "@/stores/posts-store";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-
-type ChatItem = {
-  id: string;
-  name: string;
-  handle: string;
-  lastMessage: string;
-  lastAt: string;
-  unread: number;
-  presence: "online" | "offline" | "dnd";
-};
-
-type MessageItem = {
-  id: string;
-  fromMe: boolean;
-  text: string;
-  time: string;
-  status?: "sent" | "delivered" | "read";
-  attachment?: {
-    kind: "image" | "video" | "file" | "voice" | "video_note";
-    url: string;
-    name: string;
-    mime: string;
-    size: number;
-    compressed: boolean;
-    /** Длительность для голоса / видеокружка, сек. */
-    durationSec?: number;
-  };
-};
 
 type PendingRecordedAttachment = {
   chatId: string;
@@ -144,90 +128,15 @@ function IconTrashOutline({ className }: { className?: string }) {
   );
 }
 
-const CHATS: ChatItem[] = [
-  {
-    id: "c-1",
-    name: "Анна Петрова",
-    handle: "ann_pet",
-    lastMessage: "Отправила макет карточек, посмотри пожалуйста",
-    lastAt: "21:14",
-    unread: 2,
-    presence: "online",
-  },
-  {
-    id: "c-2",
-    name: "Design Team",
-    handle: "aegis_design",
-    lastMessage: "Новая иконка репоста уже в папке design",
-    lastAt: "20:58",
-    unread: 0,
-    presence: "dnd",
-  },
-  {
-    id: "c-3",
-    name: "Максим",
-    handle: "max_dev",
-    lastMessage: "Ок, после релиза подчищу store",
-    lastAt: "18:06",
-    unread: 0,
-    presence: "offline",
-  },
-  {
-    id: "c-4",
-    name: "QA Squad",
-    handle: "qa_team",
-    lastMessage: "Проверили мобильный таббар, все ок",
-    lastAt: "вчера",
-    unread: 7,
-    presence: "online",
-  },
-];
-
 /** Список с подписями в узкой колонке (показываем текст раньше, чтобы не терять полезное место). */
 const SIDEBAR_LIST_EXPANDED_MIN = 96;
+/** Минимум ширины колонки переписки при ручном ресайзе (px). */
+const MESSAGES_RIGHT_PANE_MIN = 260;
+/** Максимум ширины списка чатов (px); фактический предел не выше «ширина панели − разделитель − MESSAGES_RIGHT_PANE_MIN». */
+const MESSAGES_LEFT_PANE_MAX = 440;
+const MESSAGES_PANE_SEPARATOR_W = 8;
+const MESSAGES_LEFT_PANE_MIN = 64;
 const VIDEO_NOTE_MAX_DURATION_SEC = 60;
-
-const MESSAGES_BY_CHAT: Record<string, MessageItem[]> = {
-  "c-1": [
-    { id: "m-1", fromMe: false, text: "Привет! Ты на месте?", time: "20:54" },
-    {
-      id: "m-2",
-      fromMe: true,
-      text: "Да, смотрю задачи по мессенджеру.",
-      time: "20:56",
-      status: "read",
-    },
-    {
-      id: "m-3",
-      fromMe: false,
-      text: "Отправила макет карточек, посмотри пожалуйста",
-      time: "21:14",
-    },
-  ],
-  "c-2": [
-    { id: "m-4", fromMe: false, text: "Новая иконка репоста уже в папке design", time: "20:58" },
-    {
-      id: "m-5",
-      fromMe: true,
-      text: "Отлично, сейчас подключу.",
-      time: "21:01",
-      status: "delivered",
-    },
-  ],
-  "c-3": [
-    {
-      id: "m-6",
-      fromMe: true,
-      text: "Прогоню фиксы и вернусь к тебе",
-      time: "17:51",
-      status: "sent",
-    },
-    { id: "m-7", fromMe: false, text: "Ок, после релиза подчищу store", time: "18:06" },
-  ],
-  "c-4": [
-    { id: "m-8", fromMe: false, text: "Проверили мобильный таббар, все ок", time: "вчера" },
-  ],
-};
 
 function avatarFallback(name: string) {
   return name.trim()[0]?.toUpperCase() ?? "?";
@@ -241,6 +150,241 @@ function formatFileSize(size: number) {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+type ForwardedFeedPost = {
+  comment: string | null;
+  author: string;
+  summary: string;
+  body: string;
+  mediaUrls?: string[];
+  postId?: string;
+  postDate?: number;
+  pollPreview?: { question: string; optionTexts: string[] };
+};
+
+function parseForwardedFeedPost(text: string): ForwardedFeedPost | null {
+  const marker = "⟲ Репост из ленты";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) {
+    return null;
+  }
+  const comment = text.slice(0, markerIndex).trim() || null;
+  const payloadRaw = text.slice(markerIndex + marker.length).trim();
+  if (!payloadRaw) {
+    return null;
+  }
+  const chunks = payloadRaw.split(/\n\s*\n/);
+  const metaChunk = chunks[0]?.trim();
+  if (!metaChunk) {
+    return null;
+  }
+  const metaLines = metaChunk
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const author = metaLines[0] ?? "Автор";
+  const summary = metaLines.slice(1).join(" ").trim() || "Запись";
+  const body = chunks.slice(1).join("\n\n").trim() || summary;
+  return { comment, author, summary, body };
+}
+
+function formatForwardedPostTimestamp(ts: number) {
+  const d = new Date(ts);
+  const datePart = d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+  });
+  const timePart = d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${datePart} в ${timePart}`;
+}
+
+function ForwardMediaStrip({ urls }: { urls: string[] }) {
+  if (urls.length === 0) {
+    return null;
+  }
+  const extra = urls.length > 4 ? urls.length - 4 : 0;
+  const display = urls.slice(0, 4);
+
+  if (display.length === 1) {
+    return (
+      <div className="px-2 pb-2">
+        <img
+          src={display[0]}
+          alt=""
+          className="max-h-52 w-full rounded-xl border border-theme-border object-cover"
+        />
+      </div>
+    );
+  }
+
+  if (display.length === 2) {
+    return (
+      <div className="grid grid-cols-2 gap-0.5 px-2 pb-2">
+        {display.map((u) => (
+          <img
+            key={u}
+            src={u}
+            alt=""
+            className="h-28 w-full rounded-lg object-cover sm:h-32"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (display.length === 3) {
+    const [a, b, c] = display;
+    return (
+      <div className="grid grid-cols-2 gap-0.5 px-2 pb-2">
+        <img src={a} alt="" className="h-24 w-full rounded-lg object-cover sm:h-28" />
+        <img src={b} alt="" className="h-24 w-full rounded-lg object-cover sm:h-28" />
+        <div className="relative col-span-2">
+          <img src={c} alt="" className="h-32 w-full rounded-lg object-cover sm:h-36" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-0.5 px-2 pb-2">
+      {display.map((u, index) => (
+        <div
+          key={`${u}-${index}`}
+          className="relative aspect-[4/3] overflow-hidden rounded-lg border border-theme-border"
+        >
+          <img src={u} alt="" className="h-full w-full object-cover" />
+          {index === 3 && extra > 0 ? (
+            <span className="absolute inset-0 grid place-items-center bg-black/55 text-lg font-semibold text-white">
+              +{extra}
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DmTelegramStyleForwardCard({
+  fromMe,
+  data,
+  onOpenPost,
+}: {
+  fromMe: boolean;
+  data: ForwardedFeedPost;
+  onOpenPost: () => void;
+}) {
+  const sameBody = data.body === data.summary;
+  const hasTextBlock = Boolean(data.summary.trim() || data.body.trim());
+  const hasPoll =
+    data.pollPreview != null &&
+    (data.pollPreview.question.trim().length > 0 ||
+      data.pollPreview.optionTexts.length > 0);
+
+  return (
+    <div className="space-y-2">
+      {data.comment ? (
+        <div className="text-[15px] leading-snug">
+          <MarkdownEmojiText text={data.comment} emojiSize="1.24em" />
+        </div>
+      ) : null}
+
+      <div
+        className={cn(
+          "overflow-hidden rounded-2xl border shadow-[0_2px_12px_rgba(0,0,0,0.35)]",
+          fromMe
+            ? "border-[#4d8ec4]/40 bg-[#1a2838]"
+            : "border-theme-border bg-theme-card-2",
+        )}
+      >
+        <div className="flex gap-2.5 border-b border-theme-border px-3 py-2.5">
+          <div
+            className={cn(
+              "grid h-10 w-10 shrink-0 place-items-center rounded-full border text-[15px] font-semibold text-theme-text",
+              fromMe
+                ? "border-[#5a9fd4]/35 bg-[#254a68]"
+                : "border-theme-border bg-theme-card-3",
+            )}
+          >
+            {avatarFallback(data.author)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold leading-tight text-[#53a5ea]">
+              {data.author}
+            </p>
+            <p className="mt-0.5 truncate text-[13px] text-theme-text-2">
+              {data.postDate != null
+                ? formatForwardedPostTimestamp(data.postDate)
+                : "Запись из ленты"}
+            </p>
+          </div>
+        </div>
+
+        <ForwardMediaStrip urls={data.mediaUrls ?? []} />
+
+        {hasTextBlock ? (
+          <div className="space-y-2 px-3 pb-2 pt-3">
+            {sameBody ? (
+              <div className="text-[15px] font-semibold leading-snug text-theme-text">
+                <MarkdownEmojiText text={data.body} emojiSize="1.2em" />
+              </div>
+            ) : (
+              <>
+                <p className="text-[15px] font-bold leading-snug text-theme-text">{data.summary}</p>
+                <div className="text-[14px] leading-relaxed text-theme-text">
+                  <MarkdownEmojiText text={data.body} emojiSize="1.15em" />
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {hasPoll && data.pollPreview ? (
+          <div className="space-y-2 px-3 pb-2 pt-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-theme-text-2">
+              Опрос
+            </p>
+            {data.pollPreview.question.trim().length > 0 ? (
+              <div className="text-[15px] font-semibold leading-snug text-theme-text">
+                <MarkdownEmojiText
+                  text={data.pollPreview.question}
+                  emojiSize="1.2em"
+                />
+              </div>
+            ) : null}
+            {data.pollPreview.optionTexts.length > 0 ? (
+              <ul className="space-y-1.5" role="list">
+                {data.pollPreview.optionTexts.map((t, i) => (
+                  <li
+                    key={`${i}-${t.slice(0, 24)}`}
+                    className="rounded-xl border border-theme-border bg-theme-hover px-3 py-2 text-[14px] leading-snug text-theme-text"
+                  >
+                    <MarkdownEmojiText text={t} emojiSize="1.1em" />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            className={cn(
+              "w-full rounded-full border py-2.5 text-[15px] font-medium transition-colors",
+              "border-[#3390ec] text-[#53a5ea] hover:bg-[#3390ec]/12 active:bg-[#3390ec]/18",
+            )}
+            onClick={onOpenPost}
+          >
+            Открыть пост
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function presenceLabel(presence: ChatItem["presence"]) {
@@ -263,15 +407,8 @@ function presenceDotClass(presence: ChatItem["presence"]) {
   return null;
 }
 
-function nowTimeLabel() {
-  return new Date().toLocaleTimeString("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function MessageStatusTicks({ status }: { status: "sent" | "delivered" | "read" }) {
-  const tone = status === "sent" ? "text-[#9AD0FF]" : "text-[#6BBFFF]";
+  const tone = "text-white/65";
   if (status === "sent") {
     return (
       <svg viewBox="0 0 16 16" className={cn("h-[15px] w-[15px]", tone)} aria-hidden>
@@ -292,19 +429,6 @@ function MessageStatusTicks({ status }: { status: "sent" | "delivered" | "read" 
         d="M10.782 4.721a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 0 1-1.06 0l-2.502-2.5A.75.75 0 0 1 2.28 8.22l1.971 1.97 5.47-5.469a.75.75 0 0 1 1.06 0zm4.248 0a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l6-6a.75.75 0 0 1 1.06 0"
         clipRule="evenodd"
       />
-    </svg>
-  );
-}
-
-function IconSendPlane({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      <g fill="none" fillRule="evenodd">
-        <path
-          fill="currentColor"
-          d="M5.739 15.754q-1.029 2.782-1.293 3.91c-.553 2.362-.956 2.894 1.107 1.771 2.062-1.122 12.046-6.683 14.274-7.919 2.904-1.611 2.942-1.485-.156-3.196-2.36-1.302-12.227-6.718-14.118-7.782-1.892-1.063-1.66-.59-1.107 1.772q.268 1.142 1.311 3.944a4 4 0 0 0 2.988 2.531l5.765 1.117a.1.1 0 0 1 0 .196l-5.778 1.116a4 4 0 0 0-2.993 2.54"
-        />
-      </g>
     </svg>
   );
 }
@@ -447,7 +571,7 @@ function VoiceAttachmentPlayer({
         "flex min-w-[220px] max-w-[min(100%,340px)] items-center gap-2 rounded-2xl border px-2.5 py-2",
         fromMe
           ? "border-[color:var(--accent-primary)]/35 bg-[color:color-mix(in_srgb,var(--accent-primary)_18%,#1f2430)]"
-          : "border-white/[0.08] bg-[#25262b]",
+          : "border-theme-border bg-theme-card-2",
         className,
       )}
     >
@@ -511,7 +635,7 @@ function VoiceAttachmentPlayer({
       <span
         className={cn(
           "min-w-[40px] shrink-0 rounded-md bg-black/20 px-1.5 py-0.5 text-center tabular-nums text-[11px] font-medium tracking-tight",
-          fromMe ? "text-neutral-200" : "text-neutral-300",
+          fromMe ? "text-theme-text" : "text-theme-text-2",
         )}
       >
         {timeLabel}
@@ -676,40 +800,32 @@ function pickVideoNoteMime(): string {
   return "";
 }
 
-async function compressImageFile(file: File): Promise<File> {
-  const imageUrl = URL.createObjectURL(file);
+/** MIME-типы, для которых применяется сжатие через browser-image-compression. */
+const COMPRESSIBLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * Сжимает изображение через browser-image-compression с Web Worker.
+ * Возвращает оригинал, если:
+ *   — тип файла не входит в COMPRESSIBLE_IMAGE_TYPES,
+ *   — или isSendAsFileChecked === true,
+ *   — или сжатие падает с ошибкой (fallback).
+ */
+async function compressImageIfNeeded(file: File, isSendAsFileChecked: boolean): Promise<File> {
+  if (isSendAsFileChecked || !COMPRESSIBLE_IMAGE_TYPES.has(file.type)) {
+    return file;
+  }
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Image load failed"));
-      el.src = imageUrl;
+    const imageCompression = (await import("browser-image-compression")).default;
+    const compressed = await imageCompression(file, {
+      maxSizeMB: 1,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      initialQuality: 0.8,
     });
-    const maxSide = 1600;
-    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-    const width = Math.max(1, Math.round(img.width * scale));
-    const height = Math.max(1, Math.round(img.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      throw new Error("No canvas context");
-    }
-    ctx.drawImage(img, 0, 0, width, height);
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((result) => {
-        if (!result) {
-          reject(new Error("Canvas export failed"));
-          return;
-        }
-        resolve(result);
-      }, "image/jpeg", 0.78);
-    });
-    const base = file.name.replace(/\.[^.]+$/u, "");
-    return new File([blob], `${base}-compressed.jpg`, { type: "image/jpeg" });
-  } finally {
-    URL.revokeObjectURL(imageUrl);
+    return new File([compressed], file.name, { type: compressed.type || file.type });
+  } catch (err) {
+    console.warn("[compressImageIfNeeded] compression failed, using original file:", err);
+    return file;
   }
 }
 
@@ -732,8 +848,16 @@ function useDesktopLgLayout() {
 
 export function MessagesPage() {
   const isDesktopLg = useDesktopLgLayout();
-  const [chats, setChats] = useState(CHATS);
-  const [messagesByChat, setMessagesByChat] = useState(MESSAGES_BY_CHAT);
+  const setScreen = useAppNavStore((s) => s.setScreen);
+  const navigateToFeedWithPostComments = useAppNavStore(
+    (s) => s.navigateToFeedWithPostComments,
+  );
+  const chats = useDmInboxStore((s) => s.chats);
+  const messagesByChat = useDmInboxStore((s) => s.messagesByChat);
+  const patchChatPreview = useDmInboxStore((s) => s.patchChatPreview);
+  const appendOutgoingMessage = useDmInboxStore((s) => s.appendOutgoingMessage);
+  const clearChatMessagesStore = useDmInboxStore((s) => s.clearChatMessages);
+  const removeChatStore = useDmInboxStore((s) => s.removeChat);
   const [query, setQuery] = useState("");
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
@@ -746,8 +870,11 @@ export function MessagesPage() {
   const [pendingRecordedAttachment, setPendingRecordedAttachment] =
     useState<PendingRecordedAttachment | null>(null);
   const [sendingCompressed, setSendingCompressed] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [dmImagePreview, setDmImagePreview] = useState<{ urls: string[]; index: number } | null>(null);
   const [leftPaneWidth, setLeftPaneWidth] = useState(92);
   const [isResizingPane, setIsResizingPane] = useState(false);
+  const initialMsgIds = useRef<Map<string, Set<string>>>(new Map());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -855,7 +982,14 @@ export function MessagesPage() {
       }
       const rect = host.getBoundingClientRect();
       const next = Math.round(e.clientX - rect.left);
-      setLeftPaneWidth(Math.max(64, Math.min(180, next)));
+      const maxByLayout = Math.round(
+        rect.width - MESSAGES_PANE_SEPARATOR_W - MESSAGES_RIGHT_PANE_MIN,
+      );
+      const upper = Math.min(
+        MESSAGES_LEFT_PANE_MAX,
+        Math.max(MESSAGES_LEFT_PANE_MIN, maxByLayout),
+      );
+      setLeftPaneWidth(Math.max(MESSAGES_LEFT_PANE_MIN, Math.min(upper, next)));
     }
     function onUp() {
       setIsResizingPane(false);
@@ -934,6 +1068,16 @@ export function MessagesPage() {
     };
   }, [isDesktopLg]);
 
+  useEffect(() => {
+    const cls = "itd-messages-page";
+    document.documentElement.classList.add(cls);
+    document.body.classList.add(cls);
+    return () => {
+      document.documentElement.classList.remove(cls);
+      document.body.classList.remove(cls);
+    };
+  }, []);
+
   const filteredChats = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) {
@@ -985,21 +1129,6 @@ export function MessagesPage() {
     };
   }, [activeChat?.id, messages]);
 
-  function updateChatPreview(chatId: string, text: string, time: string) {
-    setChats((prev) =>
-      prev.map((chat) =>
-        chat.id !== chatId
-          ? chat
-          : {
-              ...chat,
-              lastMessage: text,
-              lastAt: time,
-              unread: 0,
-            },
-      ),
-    );
-  }
-
   function sendMessage(
     text: string,
     attachment?: {
@@ -1021,21 +1150,14 @@ export function MessagesPage() {
     if (!clean && !attachment) {
       return;
     }
-    const time = nowTimeLabel();
-    setMessagesByChat((prev) => ({
-      ...prev,
-      [targetChatId]: [
-        ...(prev[targetChatId] ?? []),
-        {
-          id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          fromMe: true,
-          text: clean,
-          time,
-          status: "sent",
-          attachment,
-        },
-      ],
-    }));
+    const time = inboxNowTimeLabel();
+    appendOutgoingMessage(targetChatId, {
+      fromMe: true,
+      text: clean,
+      time,
+      status: "sent",
+      attachment,
+    });
     const previewText =
       clean ||
       (attachment
@@ -1049,7 +1171,7 @@ export function MessagesPage() {
                 ? "📹 Видеосообщение"
                 : `📎 ${attachment.name}`
         : "");
-    updateChatPreview(targetChatId, previewText, time);
+    patchChatPreview(targetChatId, previewText, time);
     const resetComposer =
       opts?.forChatId == null || (!!activeChat && opts.forChatId === activeChat.id);
     if (resetComposer) {
@@ -1392,31 +1514,49 @@ export function MessagesPage() {
     }
   }
 
-  async function sendPendingAttachment(compress: boolean) {
-    if (!pendingFile) {
+  async function sendPickedAttachment(
+    file: File,
+    isSendAsFile: boolean,
+    caption: string,
+  ) {
+    if (!activeChat?.id) {
       return;
     }
-    if (compress) {
-      setSendingCompressed(true);
-    }
+    setSendingCompressed(true);
+    setIsCompressing(true);
     try {
-      const isImage = pendingFile.type.startsWith("image/");
-      const isVideo = pendingFile.type.startsWith("video/");
-      const fileForSend =
-        compress && isImage ? await compressImageFile(pendingFile) : pendingFile;
+      const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
+
+      // Для статичных изображений — через browser-image-compression.
+      // Для видео, gif, документов — оригинал (либо если выбрано "как файл").
+      const fileForSend = await compressImageIfNeeded(file, isSendAsFile);
+
+      setIsCompressing(false);
+
       const url = URL.createObjectURL(fileForSend);
       attachmentUrlsRef.current.push(url);
-      const kind: "image" | "video" | "file" = isImage ? "image" : isVideo ? "video" : "file";
-      sendMessage("", {
+      // Если «отправить как файл» — всегда kind="file", чтобы в чате
+      // отображалась карточка-документ, а не встроенное медиа.
+      const kind: "image" | "video" | "file" = isSendAsFile
+        ? "file"
+        : isImage
+          ? "image"
+          : isVideo
+            ? "video"
+            : "file";
+      const wasCompressed = !isSendAsFile && COMPRESSIBLE_IMAGE_TYPES.has(file.type);
+      sendMessage(caption.trim(), {
         kind,
         url,
         name: fileForSend.name,
         mime: fileForSend.type || "application/octet-stream",
         size: fileForSend.size,
-        compressed: compress && (isImage || isVideo),
+        compressed: wasCompressed,
       });
       setPendingFile(null);
     } finally {
+      setIsCompressing(false);
       setSendingCompressed(false);
     }
   }
@@ -1448,29 +1588,29 @@ export function MessagesPage() {
 
   const chatListPanel = (
     <div className="flex h-full flex-col">
-      <div className="border-b border-white/[0.06] p-3 lg:px-2.5">
+      <div className="border-b border-theme-border p-3 lg:px-2.5">
         <div className="lg:hidden">
           <label
             htmlFor="messages-search-mobile"
-            className="flex min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] px-3 py-2"
+            className="flex min-w-0 items-center gap-2 rounded-xl border border-theme-border bg-theme-card-2 px-3 py-2"
           >
-            <IconSearch className="h-4 w-4 shrink-0 text-neutral-500" />
+            <IconSearch className="h-4 w-4 shrink-0 text-theme-text-2" />
             <input
               id="messages-search-mobile"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Поиск"
-              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
+              className="min-w-0 flex-1 bg-transparent text-sm text-theme-text outline-none placeholder:text-theme-text-2"
             />
           </label>
         </div>
         <div className="hidden lg:block">
           <label
             htmlFor="messages-search"
-            className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] px-3 py-2"
+            className="flex w-full min-w-0 items-center gap-2 rounded-xl border border-theme-border bg-theme-card-2 px-3 py-2"
           >
-            <IconSearch className="h-4 w-4 shrink-0 text-neutral-500" />
+            <IconSearch className="h-4 w-4 shrink-0 text-theme-text-2" />
             <input
               id="messages-search"
               type="search"
@@ -1478,7 +1618,7 @@ export function MessagesPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Поиск"
               aria-label="Поиск по чатам"
-              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
+              className="min-w-0 flex-1 bg-transparent text-sm text-theme-text outline-none placeholder:text-theme-text-2"
             />
           </label>
         </div>
@@ -1493,16 +1633,16 @@ export function MessagesPage() {
                 type="button"
                 onClick={() => openChat(chat.id)}
                 className={cn(
-                  "flex w-full items-center gap-3 border-b border-white/[0.04] px-4 py-3 text-left transition-colors lg:px-0.5 lg:py-2",
+                  "flex w-full items-center gap-3 border-b border-theme-border px-4 py-3 text-left transition-[background-color,transform] duration-150 lg:px-0.5 lg:py-2",
                   "lg:gap-2",
                   expandedLeftPane
                     ? "lg:items-start lg:justify-start"
                     : "lg:justify-center",
-                  active ? "bg-[#2b2b2b]" : "hover:bg-white/[0.03]",
+                  active ? "bg-theme-card-2" : "hover:bg-theme-hover active:scale-[0.985]",
                 )}
                 title={`${chat.name} (@${chat.handle})`}
               >
-                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-[#2a2a2a] text-sm text-neutral-200 lg:h-11 lg:w-11">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-theme-border bg-theme-card-2 text-sm text-theme-text lg:h-11 lg:w-11">
                   {avatarFallback(chat.name)}
                   {dotCls ? (
                     <span
@@ -1520,18 +1660,18 @@ export function MessagesPage() {
                 </div>
                 <div className={cn("min-w-0 flex-1", !expandedLeftPane && "lg:hidden")}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-semibold text-white">{chat.name}</p>
-                    <span className="shrink-0 text-[11px] text-neutral-500">{chat.lastAt}</span>
+                    <p className="truncate text-sm font-semibold text-theme-text">{chat.name}</p>
+                    <span className="shrink-0 text-[11px] text-theme-text-2">{chat.lastAt}</span>
                   </div>
-                  <p className="truncate text-xs text-neutral-500">{presenceLabel(chat.presence)}</p>
-                  <p className="mt-0.5 truncate text-xs text-neutral-400">{chat.lastMessage}</p>
+                  <p className="truncate text-xs text-theme-text-2">{presenceLabel(chat.presence)}</p>
+                  <p className="mt-0.5 truncate text-xs text-theme-text-2">{chat.lastMessage}</p>
                 </div>
               </button>
             </li>
           );
         })}
         {filteredChats.length === 0 ? (
-          <li className="px-4 py-10 text-center text-sm text-neutral-500">Чаты не найдены</li>
+          <li className="px-4 py-10 text-center text-sm text-theme-text-2">Чаты не найдены</li>
         ) : null}
       </ul>
     </div>
@@ -1548,10 +1688,10 @@ export function MessagesPage() {
         />
       ) : null}
 
-      <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+      <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-theme-border px-4 py-3">
         <button
           type="button"
-          className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-neutral-400 transition-colors hover:bg-white/[0.06] hover:text-white lg:hidden"
+          className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90 lg:hidden"
           onClick={closeChat}
           aria-label="Назад к чатам"
         >
@@ -1566,7 +1706,7 @@ export function MessagesPage() {
             />
           </svg>
         </button>
-        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-[#2a2a2a] text-sm text-neutral-200">
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-theme-border bg-theme-card-2 text-sm text-theme-text">
           {avatarFallback(activeChat.name)}
           {presenceDotClass(activeChat.presence) ? (
             <span
@@ -1579,13 +1719,13 @@ export function MessagesPage() {
         </div>
         <div className="relative flex min-w-0 flex-1 items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">{activeChat.name}</p>
-            <p className="truncate text-xs text-neutral-500">{presenceLabel(activeChat.presence)}</p>
+            <p className="truncate text-sm font-semibold text-theme-text">{activeChat.name}</p>
+            <p className="truncate text-xs text-theme-text-2">{presenceLabel(activeChat.presence)}</p>
           </div>
           <div className="shrink-0">
             <button
               type="button"
-              className="grid h-8 w-8 place-items-center rounded-xl text-neutral-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+              className="grid h-8 w-8 place-items-center rounded-xl text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
               aria-label="Действия с чатом"
               aria-expanded={headerMenuOpen}
               aria-haspopup="menu"
@@ -1599,52 +1739,52 @@ export function MessagesPage() {
             <div
               role="menu"
               aria-orientation="vertical"
-              className="absolute right-0 top-full z-[20] mt-1.5 w-56 max-w-[min(14rem,calc(100%-0.25rem))] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#262626] py-1 shadow-xl"
+              className="absolute right-0 top-full z-[20] mt-1.5 w-56 max-w-[min(14rem,calc(100%-0.25rem))] overflow-hidden rounded-2xl border border-theme-border bg-theme-card py-1 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-neutral-200 hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
                 onClick={() => setHeaderMenuOpen(false)}
               >
-                <IconPhoneOutline className="h-4 w-4 shrink-0 text-neutral-400" />
+                <IconPhoneOutline className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>Позвонить</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-neutral-200 hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
                 onClick={() => setHeaderMenuOpen(false)}
               >
-                <IconVideoOutline className="h-4 w-4 shrink-0 text-neutral-400" />
+                <IconVideoOutline className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>Видеозвонок</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-neutral-200 hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
                 onClick={() => setHeaderMenuOpen(false)}
               >
-                <IconSearch className="h-4 w-4 shrink-0 text-neutral-400" />
+                <IconSearch className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>Поиск</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-neutral-200 hover:bg-white/[0.07]"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
                 onClick={() => {
                   setHeaderMenuOpen(false);
                   messagesScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
                 }}
               >
-                <IconChevronsUp className="h-4 w-4 shrink-0 text-neutral-400" />
+                <IconChevronsUp className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>В начало</span>
               </button>
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-300/95 hover:bg-red-600/15"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-300/95 transition-[background-color,transform] duration-150 hover:bg-red-600/15 active:scale-[0.97]"
                 onClick={() => {
                   setHeaderMenuOpen(false);
                   setConfirmClearOpen(true);
@@ -1656,7 +1796,7 @@ export function MessagesPage() {
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-400 hover:bg-red-700/18"
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-red-400 transition-[background-color,transform] duration-150 hover:bg-red-700/18 active:scale-[0.97]"
                 onClick={() => {
                   setHeaderMenuOpen(false);
                   setConfirmDeleteOpen(true);
@@ -1672,9 +1812,23 @@ export function MessagesPage() {
 
       <div
         ref={messagesScrollRef}
-        className="relative z-[1] flex-1 space-y-3 overflow-y-auto overflow-x-hidden bg-[#1d1d1d] px-4 py-4"
+        className="relative z-[1] flex-1 space-y-3 overflow-y-auto overflow-x-hidden bg-theme-bg px-4 py-4"
       >
         {messages.map((message) => {
+          const forwardedPost: ForwardedFeedPost | null = message.forwardEmbed
+            ? {
+                comment: message.forwardEmbed.comment ?? null,
+                author: message.forwardEmbed.authorLine,
+                summary: message.forwardEmbed.summaryLine,
+                body: message.forwardEmbed.bodyLine,
+                mediaUrls: message.forwardEmbed.mediaUrls,
+                postId: message.forwardEmbed.postId,
+                postDate: message.forwardEmbed.postCreatedAt,
+                pollPreview: message.forwardEmbed.pollPreview,
+              }
+            : message.attachment
+              ? null
+              : parseForwardedFeedPost(message.text);
           const showMessageBubble = message.text.trim().length > 0;
           const emojiParts = showMessageBubble && !message.attachment
             ? splitEmojiAware(message.text).filter(
@@ -1688,27 +1842,68 @@ export function MessagesPage() {
           // Bubble: одиночный смайлик — без фона/рамки
           const hasBubble = showMessageBubble && !singleEmojiMessage;
 
+          // Lazy-init начальный набор ID для этого чата
+          const chatId = activeChat!.id;
+          if (!initialMsgIds.current.has(chatId)) {
+            initialMsgIds.current.set(chatId, new Set(messages.map((m) => m.id)));
+          }
+          const isNew = !initialMsgIds.current.get(chatId)!.has(message.id);
+          const msgAnim = isNew
+            ? (message.fromMe
+                ? "aegis-msg-in-me 0.24s cubic-bezier(0.25, 1, 0.5, 1)"
+                : "aegis-msg-in-other 0.24s cubic-bezier(0.25, 1, 0.5, 1)")
+            : undefined;
+
           return (
           <div
             key={message.id}
+            style={msgAnim ? { animation: msgAnim } : undefined}
             className={cn("flex", message.fromMe ? "justify-end" : "justify-start")}
           >
             <div
               className={cn(
-                "max-w-[82%] text-sm leading-relaxed",
+                "text-sm leading-relaxed",
+                forwardedPost
+                  ? "w-2/3 min-w-0 shrink-0"
+                  : "max-w-[82%]",
                 hasBubble
                   ? "rounded-2xl px-3 py-2"
                   : "px-0 py-0",
                 message.fromMe
                   ? hasBubble
-                    ? "rounded-br-md border border-[var(--accent-primary)]/28 bg-[#356492] text-[var(--text-primary)] shadow-[0_1px_6px_rgba(0,0,0,0.22)]"
+                    ? forwardedPost
+                      ? "rounded-2xl rounded-br-md border-transparent bg-transparent px-1 py-1 text-[var(--text-primary)] shadow-none"
+                      : "rounded-br-md bg-[var(--dm-bubble-bg)] text-white shadow-[0_1px_6px_rgba(0,0,0,0.18)]"
                     : "text-[var(--text-primary)]"
                   : hasBubble
-                    ? "rounded-bl-md bg-[#2a2a2a] text-neutral-200"
-                    : "text-neutral-200",
+                    ? forwardedPost
+                      ? "rounded-2xl rounded-bl-md border-transparent bg-transparent px-1 py-1 text-theme-text shadow-none"
+                      : "rounded-bl-md bg-theme-card-2 text-theme-text"
+                    : "text-theme-text",
               )}
             >
               {message.text ? (
+                forwardedPost ? (
+                  <DmTelegramStyleForwardCard
+                    fromMe={message.fromMe}
+                    data={forwardedPost}
+                    onOpenPost={() => {
+                      const pid = forwardedPost.postId;
+                      if (!pid) {
+                        setScreen("feed");
+                        return;
+                      }
+                      const post = usePostsStore
+                        .getState()
+                        .posts.find((p) => p.id === pid);
+                      if (!post) {
+                        setScreen("feed");
+                        return;
+                      }
+                      navigateToFeedWithPostComments(post.seq);
+                    }}
+                  />
+                ) : (
                 singleEmojiMessage ? (
                   // Один смайлик — большой, без фона
                   <div className="flex items-end gap-1.5">
@@ -1718,7 +1913,7 @@ export function MessagesPage() {
                     <p
                       className={cn(
                         "mb-[2px] flex shrink-0 items-center gap-1 text-[13px] leading-none lg:text-[12px]",
-                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                        message.fromMe ? "text-white/65" : "text-theme-text-2",
                       )}
                     >
                       <span>{message.time}</span>
@@ -1736,7 +1931,7 @@ export function MessagesPage() {
                     <p
                       className={cn(
                         "mt-0.5 flex items-center justify-end gap-1 text-[13px] leading-none lg:text-[12px]",
-                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                        message.fromMe ? "text-white/65" : "text-theme-text-2",
                       )}
                     >
                       <span>{message.time}</span>
@@ -1749,12 +1944,15 @@ export function MessagesPage() {
                   // Текст (с возможными смайликами) — inline время
                   <div className="flex min-w-0 items-end gap-2">
                     <div className="min-w-0 flex-1 text-[15px] leading-snug">
-                      <MarkdownEmojiText text={message.text} emojiSize="1.15em" />
+                      <MarkdownEmojiText
+                        text={message.text}
+                        emojiSize="1.24em"
+                      />
                     </div>
                     <p
                       className={cn(
                         "mb-[1px] flex shrink-0 items-center gap-1 text-[13px] leading-none lg:text-[12px]",
-                        message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                        message.fromMe ? "text-white/65" : "text-theme-text-2",
                       )}
                     >
                       <span>{message.time}</span>
@@ -1763,6 +1961,7 @@ export function MessagesPage() {
                       ) : null}
                     </p>
                   </div>
+                )
                 )
               ) : null}
               {message.attachment ? (
@@ -1788,105 +1987,52 @@ export function MessagesPage() {
                       />
                     );
                   }
-                  const compactMedia =
-                    a.compressed && (a.kind === "image" || a.kind === "video");
-                  if (compactMedia) {
-                    return (
-                      <div
-                        className={cn(
-                          "flex min-w-0 gap-3 rounded-xl p-2.5",
-                          message.text ? "mt-2" : "",
-                          message.fromMe ? "bg-black/18" : "bg-black/22",
-                        )}
-                      >
-                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-black/35 ring-1 ring-white/[0.08]">
-                          {a.kind === "image" ? (
-                            <img src={a.url} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <video
-                              src={a.url}
-                              className="h-full w-full object-cover"
-                              muted
-                              playsInline
-                              preload="metadata"
-                            />
-                          )}
-                        </div>
-                        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-                          <p className="truncate text-sm font-semibold text-white">{a.name}</p>
-                          <p className="text-xs text-neutral-400">{formatFileSize(a.size)}</p>
-                          <a
-                            href={a.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1 w-fit text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--link-color)] hover:text-[var(--accent-hover)]"
-                          >
-                            Открыть
-                          </a>
-                        </div>
-                      </div>
-                    );
-                  }
                   if (a.kind === "image") {
                     return (
-                      <div className={cn("space-y-2", message.text ? "mt-2" : "")}>
+                      <button
+                        type="button"
+                        className={cn(
+                          "group block w-full overflow-hidden rounded-xl border border-theme-border transition-all duration-150 hover:border-theme-border hover:brightness-105 active:scale-[0.99] active:brightness-95",
+                          message.text ? "mt-2" : "",
+                        )}
+                        aria-label="Открыть изображение"
+                        onClick={() => setDmImagePreview({ urls: [a.url], index: 0 })}
+                      >
                         <img
                           src={a.url}
-                          alt={a.name}
-                          className="max-h-56 w-full rounded-xl border border-white/10 object-cover"
+                          alt=""
+                          className="max-h-[min(70vh,420px)] w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
                         />
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
-                          <span className="truncate">
-                            Изображение как файл · {formatFileSize(a.size)}
-                          </span>
-                          <a
-                            href={a.url}
-                            download={a.name}
-                            className="shrink-0 rounded-full border border-white/15 px-2 py-0.5 text-neutral-300 hover:bg-white/5"
-                          >
-                            Скачать
-                          </a>
-                        </div>
-                      </div>
+                      </button>
                     );
                   }
                   if (a.kind === "video") {
                     return (
-                      <div className={cn("space-y-2", message.text ? "mt-2" : "")}>
+                      <div className={cn(message.text ? "mt-2" : "")}>
                         <video
                           src={a.url}
-                          className="max-h-56 w-full rounded-xl border border-white/10 object-cover"
+                          className="max-h-[min(70vh,420px)] w-full rounded-xl border border-theme-border object-cover"
                           controls
                           playsInline
                           preload="metadata"
                         />
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-neutral-400">
-                          <span className="truncate">Видео · {formatFileSize(a.size)}</span>
-                          <a
-                            href={a.url}
-                            download={a.name}
-                            className="shrink-0 rounded-full border border-white/15 px-2 py-0.5 text-neutral-300 hover:bg-white/5"
-                          >
-                            Скачать
-                          </a>
-                        </div>
                       </div>
                     );
                   }
                   return (
                     <div
                       className={cn(
-                        "rounded-xl border border-white/10 bg-black/10 p-2",
+                        "rounded-xl border border-theme-border bg-theme-hover p-2",
                         message.text ? "mt-2" : "",
                       )}
                     >
-                      <p className="truncate text-xs text-neutral-300">{a.name}</p>
-                      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-neutral-400">
+                      <p className="truncate text-xs text-theme-text">{a.name}</p>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-theme-text-2">
                         <span>{formatFileSize(a.size)}</span>
                         <a
                           href={a.url}
                           download={a.name}
-                          className="rounded-full border border-white/15 px-2 py-0.5 text-neutral-300 hover:bg-white/5"
+                          className="rounded-full border border-theme-border px-2 py-0.5 text-theme-text-2 hover:bg-theme-hover"
                         >
                           Скачать
                         </a>
@@ -1895,11 +2041,11 @@ export function MessagesPage() {
                   );
                 })()
               ) : null}
-              {!message.text ? (
+              {!message.text || forwardedPost ? (
                 <p
                   className={cn(
                     "mt-1 flex items-center justify-end gap-1 text-[13px] leading-none lg:text-[12px]",
-                    message.fromMe ? "text-[#9AD0FF] lg:text-[#7FC1FF]" : "text-neutral-400",
+                    message.fromMe ? "text-white/65" : "text-theme-text-2",
                   )}
                 >
                   <span>{message.time}</span>
@@ -1954,51 +2100,8 @@ export function MessagesPage() {
         </div>
       ) : null}
 
-      <footer className="mt-auto border-t border-white/[0.06] bg-[#202020] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-        {pendingFile ? (
-          <div className="mb-2 rounded-xl border border-white/[0.08] bg-[#2a2a2a] p-2.5">
-            <p className="truncate text-xs text-neutral-300">
-              Вложение: {pendingFile.name} · {formatFileSize(pendingFile.size)}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {pendingFile.type.startsWith("image/") || pendingFile.type.startsWith("video/") ? (
-                <>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-200 hover:bg-white/5"
-                    onClick={() => sendPendingAttachment(false)}
-                  >
-                    Отправить как файл
-                  </button>
-                  <button
-                    type="button"
-                    disabled={sendingCompressed}
-                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-60"
-                    onClick={() => sendPendingAttachment(true)}
-                  >
-                    {sendingCompressed ? "Сжимаю..." : "Сжать и отправить"}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200"
-                  onClick={() => sendPendingAttachment(false)}
-                >
-                  Отправить файл
-                </button>
-              )}
-              <button
-                type="button"
-                className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-400 hover:bg-white/5"
-                onClick={() => setPendingFile(null)}
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        ) : null}
-        <div className={cn("flex gap-2 rounded-2xl border border-white/[0.08] bg-[#2a2a2a] p-2", isRecordingMedia ? "items-center" : "items-end")}>
+      <footer className="mt-auto border-t border-theme-border bg-theme-card p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="flex items-center gap-1.5 rounded-2xl border border-theme-border bg-theme-card-2 px-2 py-1.5">
           <input
             ref={fileInputRef}
             type="file"
@@ -2010,14 +2113,14 @@ export function MessagesPage() {
           />
           <button
             type="button"
-            className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-neutral-200"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
             aria-label="Прикрепить файл"
             onClick={() => fileInputRef.current?.click()}
           >
             <IconPaperclip className="h-[18px] w-[18px]" />
           </button>
           {isRecordingMedia || pendingRecordedAttachment ? (
-            <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-[#1f1f1f] px-2.5 py-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-theme-bg px-2.5 py-2">
               {!isRecordingVideoNote && !isPendingVideoNote ? (
                 <span
                   className={cn(
@@ -2028,7 +2131,7 @@ export function MessagesPage() {
                 />
               ) : null}
               {!isRecordingVideoNote && !isPendingVideoNote ? (
-                <span className="shrink-0 font-mono text-xs text-neutral-200">
+                <span className="shrink-0 font-mono text-xs text-theme-text">
                   {formatVoiceClock(
                     isRecordingMedia
                       ? recordingElapsedSec
@@ -2040,7 +2143,7 @@ export function MessagesPage() {
                 <div className="min-w-0 flex-1" />
               ) : pendingRecordedAttachment?.kind === "video_note" ? (
                 <div className="flex min-w-0 flex-1 items-center">
-                  <span className="truncate text-xs text-neutral-300">
+                  <span className="truncate text-xs text-theme-text-2">
                     Кружок готов к отправке
                   </span>
                 </div>
@@ -2070,7 +2173,7 @@ export function MessagesPage() {
               )}
               <button
                 type="button"
-                className="shrink-0 text-xs text-neutral-400 transition-colors hover:text-neutral-200"
+                className="shrink-0 text-xs text-theme-text-2 transition-[color,transform] duration-150 hover:text-theme-text active:scale-90"
                 onClick={() =>
                   isRecordingMedia
                     ? finalizeMediaRecording({ discard: true })
@@ -2082,7 +2185,7 @@ export function MessagesPage() {
               {!isRecordingMedia && pendingRecordedAttachment ? (
                 <button
                   type="button"
-                  className="shrink-0 text-xs text-neutral-200 transition-colors hover:text-white"
+                  className="shrink-0 text-xs text-theme-text transition-[color,transform] duration-150 hover:text-theme-text active:scale-90"
                   onClick={sendRecordedByMic}
                 >
                   Отправить
@@ -2103,11 +2206,11 @@ export function MessagesPage() {
                   }
                 }}
                 placeholder="Написать сообщение..."
-                className="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-white outline-none placeholder:text-neutral-600"
+                className="m-0 max-h-28 min-h-[40px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-2.5 text-sm leading-5 text-theme-text outline-none placeholder:text-theme-text-2"
               />
               <button
                 type="button"
-                className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-neutral-200"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
                 aria-label="Эмодзи"
                 onClick={() => setEmojiOpen(true)}
               >
@@ -2118,7 +2221,7 @@ export function MessagesPage() {
           {showSendPlane ? (
             <button
               type="button"
-              className="grid h-9 w-9 place-items-center rounded-xl text-neutral-300 transition-colors hover:bg-white/[0.06] hover:text-white"
+              className="grid h-9 w-9 place-items-center rounded-xl text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
               onClick={sendComposerMessage}
               aria-label="Отправить"
             >
@@ -2128,10 +2231,10 @@ export function MessagesPage() {
             <button
               type="button"
               className={cn(
-                "grid h-9 w-9 place-items-center rounded-xl text-neutral-300 transition-[color,background-color,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none touch-none",
+                "grid h-9 w-9 place-items-center rounded-xl text-theme-text-2 transition-[color,background-color,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none touch-none",
                 isRecordingMedia
                   ? "bg-red-600/20 text-red-200 ring-2 ring-red-500/55"
-                  : "hover:bg-white/[0.06] hover:text-white",
+                  : "hover:bg-theme-hover hover:text-theme-text",
                 voiceControlLiftPx > 1 &&
                   "z-10 bg-red-600/25 text-red-100 shadow-[0_8px_20px_rgba(239,68,68,0.35)] ring-2 ring-red-500/60",
               )}
@@ -2171,22 +2274,41 @@ export function MessagesPage() {
       </footer>
     </div>
   ) : (
-    <div className="grid flex-1 place-items-center bg-[#1d1d1d] p-6 text-center">
+    <div className="grid flex-1 place-items-center bg-theme-bg p-6 text-center">
       <div>
-        <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-[#2a2a2a] text-neutral-300">
+        <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-theme-card-2 text-theme-text-2">
           <IconMessages className="h-6 w-6" />
         </div>
-        <p className="text-sm text-neutral-300">Выберите чат, чтобы начать переписку</p>
+        <p className="text-sm text-theme-text-2">Выберите чат, чтобы начать переписку</p>
       </div>
     </div>
   );
 
   return (
-    <div className="itd-messages-root flex min-h-0 flex-col overflow-hidden font-sans text-white lg:h-[calc(100dvh-8.5rem)] lg:min-h-[calc(100dvh-8.5rem)] lg:pt-6">
+    <div className="itd-messages-root flex min-h-0 flex-col overflow-hidden font-sans text-theme-text lg:h-[calc(100dvh-4.5rem)] lg:min-h-[calc(100dvh-4.5rem)]">
       <EmojiMartModal
         open={emojiOpen}
         onClose={() => setEmojiOpen(false)}
         onPick={insertEmoji}
+      />
+
+      {dmImagePreview && (
+        <PostImagePreview
+          urls={dmImagePreview.urls}
+          initialIndex={dmImagePreview.index}
+          onClose={() => setDmImagePreview(null)}
+        />
+      )}
+
+      <SendMediaAttachmentModal
+        open={pendingFile !== null}
+        file={pendingFile}
+        compressing={isCompressing}
+        sending={sendingCompressed && !isCompressing}
+        onClose={() => setPendingFile(null)}
+        onSend={async ({ file, asDocument, caption }) => {
+          await sendPickedAttachment(file, asDocument, caption);
+        }}
       />
 
       <MessengerConfirmModal
@@ -2198,7 +2320,7 @@ export function MessagesPage() {
         variant="danger"
         onConfirm={() => {
           if (activeChat) {
-            setMessagesByChat((prev) => ({ ...prev, [activeChat.id]: [] }));
+            clearChatMessagesStore(activeChat.id);
           }
           setConfirmClearOpen(false);
         }}
@@ -2213,12 +2335,7 @@ export function MessagesPage() {
         variant="danger"
         onConfirm={() => {
           if (activeChat) {
-            setChats((prev) => prev.filter((c) => c.id !== activeChat.id));
-            setMessagesByChat((prev) => {
-              const next = { ...prev };
-              delete next[activeChat.id];
-              return next;
-            });
+            removeChatStore(activeChat.id);
           }
           setConfirmDeleteOpen(false);
           setHeaderMenuOpen(false);
@@ -2229,7 +2346,12 @@ export function MessagesPage() {
       />
 
       {/* Заголовок: скрываем при полноэкранном чате на мобильном */}
-      <h1 className={cn("mb-4 text-2xl font-bold tracking-tight", !isDesktopLg && mobileChatOpen && "hidden")}>
+      <h1
+        className={cn(
+          "mb-4 text-2xl font-bold tracking-tight lg:mb-2",
+          !isDesktopLg && mobileChatOpen && "hidden",
+        )}
+      >
         Сообщения
       </h1>
 
@@ -2238,35 +2360,33 @@ export function MessagesPage() {
           className="min-h-0 flex-1 overflow-hidden"
         >
           {!mobileChatOpen ? (
-            <section className="h-full overflow-hidden rounded-3xl border border-white/[0.06] bg-[#202020]">
+            <section className="h-full overflow-hidden rounded-3xl border border-theme-border bg-theme-card">
               {chatListPanel}
             </section>
           ) : (
-            <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-white/[0.06] bg-[#1e1e1e]">
+            <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-theme-border bg-theme-card">
               {chatViewPanel}
             </section>
           )}
         </div>
       ) : (
-        <section className="flex flex-1 flex-col overflow-hidden rounded-3xl border border-white/[0.06] bg-[#1e1e1e]">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-theme-border bg-theme-card">
           <div
             ref={panelRef}
-            className="grid h-[calc(100dvh-13rem)] min-h-0 w-full lg:[grid-template-columns:var(--messages-cols)]"
+            className="grid min-h-0 w-full flex-1 lg:[grid-template-columns:var(--messages-cols)]"
             style={{ ["--messages-cols" as string]: `${leftPaneWidth}px minmax(0, 8px) minmax(0, 1fr)` }}
           >
-            <aside className="h-full overflow-hidden border-r border-white/[0.06] bg-[#202020]">
+            <aside className="h-full overflow-hidden bg-theme-card">
               {chatListPanel}
             </aside>
 
             <div
-              className="relative cursor-col-resize bg-[#1e1e1e]"
+              className="relative cursor-col-resize bg-theme-card"
               onMouseDown={() => setIsResizingPane(true)}
               role="separator"
               aria-orientation="vertical"
               aria-label="Изменить ширину панели чатов"
-            >
-              <span className="absolute left-1/2 top-1/2 h-14 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20" />
-            </div>
+            />
 
             <div className="flex h-full min-h-0 flex-col overflow-hidden">
               {chatViewPanel}

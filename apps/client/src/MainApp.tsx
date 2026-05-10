@@ -9,7 +9,9 @@ import { ProfilePage } from "@/components/messenger/ProfilePage";
 import { SearchPage } from "@/components/messenger/SearchPage";
 import { SuccessToast } from "@/components/messenger/SuccessToast";
 import { useAppNavStore } from "@/stores/app-nav-store";
+import { usePostCommentsRouteStore } from "@/stores/post-comments-route-store";
 import { useSessionStore } from "@/stores/session-store";
+import { useEffect } from "react";
 
 function MainPanel() {
   const screen = useAppNavStore((s) => s.screen);
@@ -33,9 +35,24 @@ function MainPanel() {
 export function MainApp() {
   const authSuccessMessage = useSessionStore((s) => s.authSuccessMessage);
   const dismissAuthSuccess = useSessionStore((s) => s.dismissAuthSuccess);
+  const applyRouteFromLocation = useAppNavStore((s) => s.applyRouteFromLocation);
+  const syncPostCommentsFromLocation = usePostCommentsRouteStore(
+    (s) => s.syncFromLocation,
+  );
+
+  useEffect(() => {
+    applyRouteFromLocation();
+    syncPostCommentsFromLocation();
+    const onPopState = () => {
+      applyRouteFromLocation();
+      syncPostCommentsFromLocation();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [applyRouteFromLocation, syncPostCommentsFromLocation]);
 
   return (
-    <div className="relative min-h-dvh w-full max-w-[100vw] bg-[#121212] font-sans text-white antialiased">
+    <div className="relative min-h-dvh w-full max-w-[100vw] bg-theme-bg font-sans text-theme-text antialiased">
       {/*
         Плавающий макет: внешние поля у всего UI, внутри — центрированный ряд
         «сайдбар-карточка + контент», без fixed к краям вьюпорта.

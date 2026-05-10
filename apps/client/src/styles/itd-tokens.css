@@ -11,6 +11,7 @@
   --text-inverse: #ffffff;
   --accent-primary: #3b82f6;
   --accent-secondary: #60a5fa;
+  --dm-bubble-bg: #3b82f6;
   --accent-hover: #2563eb;
   --accent-like: #f91880;
   --accent-repost: #00ba7c;
@@ -62,6 +63,7 @@ html[data-theme="dark"] {
   --text-inverse: #000000;
   --accent-primary: #0080ff;
   --accent-secondary: #3b82f6;
+  --dm-bubble-bg: #356492;
   --accent-hover: #93c5fd;
   --accent-like: #f91880;
   --accent-repost: #00ba7c;

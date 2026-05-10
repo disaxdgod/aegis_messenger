@@ -20,11 +20,11 @@ export function HashtagFeedPage() {
   const title = display ? `#${display}` : key ? `#${key}` : "#…";
 
   return (
-    <div className="font-sans text-white">
+    <div className="font-sans text-theme-text">
       <button
         type="button"
         onClick={closeHashtagFeed}
-        className="mb-4 flex items-center gap-1.5 text-sm font-medium text-neutral-400 transition-colors hover:text-white"
+        className="mb-4 flex items-center gap-1.5 text-sm font-medium text-theme-text-2 transition-[color,transform] duration-150 hover:text-theme-text active:scale-95"
       >
         <svg
           viewBox="0 0 24 24"
@@ -42,7 +42,7 @@ export function HashtagFeedPage() {
         Назад
       </button>
 
-      <h1 className="mb-6 text-2xl font-bold tracking-tight text-[#71AAEB]">
+      <h1 className="mb-6 text-2xl font-bold tracking-tight text-theme-accent">
         {title}
       </h1>
 
@@ -54,8 +54,8 @@ export function HashtagFeedPage() {
         </div>
       ) : (
         <div
-          className="rounded-3xl border border-white/[0.06] px-6 py-16 text-center text-sm text-neutral-500"
-          style={{ backgroundColor: "#1e1e1e" }}
+          className="rounded-3xl border border-theme-border px-6 py-16 text-center text-sm text-theme-text-2"
+          style={{ backgroundColor: "var(--block-bg)" }}
         >
           Пока нет постов с этим хештегом
         </div>

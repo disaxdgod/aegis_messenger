@@ -36,6 +36,8 @@ export type PostStats = {
 
 export type PostEntity = {
   id: string;
+  /** Короткий номер для URL (`?post=1`), монотонно растёт. */
+  seq: number;
   text: string;
   createdAt: number;
   /** Время последнего изменения текста; `null` — не редактировался. */
@@ -55,10 +57,13 @@ function defaultStats(): PostStats {
   return { likes: 0, comments: 0, reposts: 0, views: 0, liked: false };
 }
 
+
 type PostsState = {
   posts: PostEntity[];
+  /** Следующий `seq` для нового поста. */
+  nextSeq: number;
   addPost: (
-    post: Omit<PostEntity, "id" | "createdAt" | "stats" | "editedAt">,
+    post: Omit<PostEntity, "id" | "seq" | "createdAt" | "stats" | "editedAt">,
   ) => void;
   updatePost: (
     id: string,
@@ -66,6 +71,7 @@ type PostsState = {
   ) => void;
   removePost: (id: string) => void;
   toggleLike: (id: string) => void;
+  incrementReposts: (id: string) => void;
   incrementViews: (id: string) => void;
   voteInPoll: (
     postId: string,
@@ -81,16 +87,19 @@ type PostsState = {
 
 export const usePostsStore = create<PostsState>((set, get) => ({
   posts: [],
+  nextSeq: 1,
 
   addPost: (post) => {
+    const seq = get().nextSeq;
     const entity: PostEntity = {
       ...post,
       id: createClientId(),
+      seq,
       createdAt: Date.now(),
       editedAt: null,
       stats: defaultStats(),
     };
-    set((s) => ({ posts: [entity, ...s.posts] }));
+    set((s) => ({ posts: [entity, ...s.posts], nextSeq: s.nextSeq + 1 }));
   },
 
   updatePost: (id, patch) => {
@@ -130,6 +139,22 @@ export const usePostsStore = create<PostsState>((set, get) => ({
                 ...p.stats,
                 liked: !p.stats.liked,
                 likes: p.stats.liked ? p.stats.likes - 1 : p.stats.likes + 1,
+              },
+            },
+      ),
+    }));
+  },
+
+  incrementReposts: (id) => {
+    set((s) => ({
+      posts: s.posts.map((p) =>
+        p.id !== id
+          ? p
+          : {
+              ...p,
+              stats: {
+                ...p.stats,
+                reposts: p.stats.reposts + 1,
               },
             },
       ),

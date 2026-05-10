@@ -75,8 +75,8 @@ function MenuRow({
       role="menuitem"
       onClick={onPick}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
-        "hover:bg-white/[0.06] focus-visible:bg-white/[0.06] focus-visible:outline-none",
+        "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-[color,background-color,transform] duration-150",
+        "hover:bg-theme-hover focus-visible:bg-theme-hover focus-visible:outline-none active:scale-[0.97]",
       )}
     >
       <span
@@ -90,14 +90,14 @@ function MenuRow({
       <span className="min-w-0 flex-1">
         <span
           className={cn(
-            "block text-[15px] font-medium text-neutral-100",
+            "block text-[15px] font-medium text-theme-text",
             titleClassName,
           )}
         >
           {title}
         </span>
         {subtitle ? (
-          <span className="mt-0.5 block text-xs leading-snug text-neutral-500">
+          <span className="mt-0.5 block text-xs leading-snug text-theme-text-2">
             {subtitle}
           </span>
         ) : null}
@@ -225,8 +225,8 @@ export function PresenceStatusMenu() {
       role="menu"
       aria-label="Выбор статуса"
       className={cn(
-        "fixed z-[200] w-[280px] overflow-hidden rounded-lg border border-white/[0.08]",
-        "bg-[#1e1f22] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.55)]",
+        "fixed z-[200] w-[280px] overflow-hidden rounded-lg border border-theme-border",
+        "bg-theme-card py-1 shadow-[0_16px_48px_rgba(0,0,0,0.25)]",
       )}
       style={{ top: coords.top, left: coords.left, width: MENU_W }}
       onMouseEnter={cancelClose}
@@ -237,7 +237,7 @@ export function PresenceStatusMenu() {
         icon={<OnlineMenuIcon />}
         title="В сети"
       />
-      <div className="my-1 h-px bg-white/[0.06]" role="separator" />
+      <div className="my-1 h-px bg-theme-border" role="separator" />
       <MenuRow
         onPick={() => pick("dnd")}
         icon={<DndMenuIcon />}

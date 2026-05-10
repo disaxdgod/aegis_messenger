@@ -60,18 +60,19 @@ export function AvatarCropModal({
     >
       <div
         className={cn(
-          "flex w-full max-w-[min(100vw-2rem,420px)] flex-col overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#1a1a1a] shadow-2xl",
+          "flex w-full max-w-[min(100vw-2rem,420px)] flex-col overflow-hidden rounded-[20px] border border-theme-border bg-theme-card shadow-2xl",
         )}
       >
-        <div className="border-b border-white/[0.06] px-5 py-4">
+        <div className="border-b border-theme-border px-5 py-4">
           <h2
             id="avatar-crop-title"
-            className="text-lg font-semibold tracking-tight text-white"
+            className="text-lg font-semibold tracking-tight text-theme-text"
           >
             Обрезка фото
           </h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            Перетащите и масштабируйте — область внутри круга попадёт в аватар.
+          <p className="mt-1 text-sm text-theme-text-2">
+            Перетащите фото. Масштаб — колесом мыши или жестом «щипок». Область
+            внутри круга попадёт в аватар.
           </p>
         </div>
 
@@ -86,31 +87,17 @@ export function AvatarCropModal({
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
+            zoomWithScroll
+            minZoom={1}
+            maxZoom={3}
           />
         </div>
 
-        <div className="border-t border-white/[0.06] px-5 py-4">
-          <label
-            htmlFor="avatar-crop-zoom"
-            className="mb-3 flex items-center gap-3 text-sm text-neutral-400"
-          >
-            <span className="shrink-0">Масштаб</span>
-            <input
-              id="avatar-crop-zoom"
-              type="range"
-              min={1}
-              max={3}
-              step={0.01}
-              value={zoom}
-              onChange={(e) => setZoom(Number(e.target.value))}
-              className="h-2 w-full flex-1 cursor-pointer accent-white"
-            />
-          </label>
-
+        <div className="border-t border-theme-border px-5 py-4">
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
             <button
               type="button"
-              className="min-h-11 rounded-full border border-white/[0.14] bg-[#262626] px-5 text-sm font-medium text-white transition-colors hover:border-white/22 hover:bg-[#303030] disabled:opacity-50"
+              className="min-h-11 rounded-full border border-theme-border bg-theme-card-2 px-5 text-sm font-medium text-theme-text transition-colors hover:bg-theme-hover disabled:opacity-50"
               onClick={onClose}
               disabled={busy}
             >
