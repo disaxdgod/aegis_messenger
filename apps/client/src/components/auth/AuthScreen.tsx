@@ -1,22 +1,38 @@
 import { AuthVisual } from "@/components/auth/AuthVisual";
-import {
-  EyeOffGlyph,
-  EyeOpenGlyph,
-  GoogleGlyph,
-  YandexGlyph,
-} from "@/components/auth/icons";
-import { Button } from "@/components/ui/button";
+import { EyeOffGlyph, EyeOpenGlyph } from "@/components/auth/icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AuthFieldErrors } from "@/stores/auth-form-store";
 import { useAuthFormStore } from "@/stores/auth-form-store";
-import { useProfileStore } from "@/stores/profile-store";
 import { useSessionStore } from "@/stores/session-store";
+import { apiSignIn, apiSignUp, AuthApiError } from "@/lib/auth-api";
+import {
+  createStoredIdentityKeys,
+  WebCryptoUnavailableError,
+} from "@/lib/e2ee-identity-keys";
 import { cn } from "@/lib/utils";
 import type { FormEvent } from "react";
+import { useState } from "react";
 
-function isValidEmail(value: string) {
+function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function validateUsernameSignup(raw: string): string | undefined {
+  const u = raw.trim().toLowerCase();
+  if (!u) return "Укажите логин";
+  if (!/^[a-z0-9_]{3,32}$/.test(u)) {
+    return "Логин: 3–32 символа, латиница, цифры и _.";
+  }
+  return undefined;
+}
+
+function validateSignInCredential(raw: string): string | undefined {
+  const x = raw.trim();
+  if (!x) return "Укажите логин или email";
+  if (x.includes("@"))
+    return isValidEmail(x) ? undefined : "Некорректный email";
+  return validateUsernameSignup(x);
 }
 
 const authInputClass =
@@ -51,6 +67,8 @@ function PasswordToggle(props: {
 }
 
 export function AuthScreen() {
+  const [submitBusy, setSubmitBusy] = useState(false);
+
   const mode = useAuthFormStore((s) => s.mode);
   const login = useAuthFormStore((s) => s.login);
   const email = useAuthFormStore((s) => s.email);
@@ -72,30 +90,23 @@ export function AuthScreen() {
   const setBanner = useAuthFormStore((s) => s.setBanner);
   const clearFieldError = useAuthFormStore((s) => s.clearFieldError);
   const clearAllErrors = useAuthFormStore((s) => s.clearAllErrors);
-  const signIn = useSessionStore((s) => s.signIn);
-  const setUsername = useProfileStore((s) => s.setUsername);
+  const establishSession = useSessionStore((s) => s.establishSession);
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     clearAllErrors();
 
     const next: AuthFieldErrors = {};
 
     if (mode === "sign-in") {
-      if (!login.trim()) {
-        next.login = "Укажите логин";
-      } else if (login.trim().length < 2) {
-        next.login = "Логин слишком короткий";
-      }
+      const credErr = validateSignInCredential(login);
+      if (credErr) next.login = credErr;
       if (!password) {
         next.password = "Укажите пароль";
       }
     } else {
-      if (!login.trim()) {
-        next.login = "Укажите логин";
-      } else if (login.trim().length < 2) {
-        next.login = "Логин слишком короткий";
-      }
+      const userErr = validateUsernameSignup(login);
+      if (userErr) next.login = userErr;
       if (!email.trim()) {
         next.email = "Укажите email";
       } else if (!isValidEmail(email)) {
@@ -116,18 +127,54 @@ export function AuthScreen() {
       return;
     }
 
-    setUsername(login.trim());
-    signIn(
-      mode === "sign-up"
-        ? {
-            message: "Аккаунт создан. Добро пожаловать!",
-            openOnboarding: true,
-          }
-        : {
-            message: "Добро пожаловать!",
-            openOnboarding: false,
-          },
-    );
+    setSubmitBusy(true);
+    try {
+      if (mode === "sign-up") {
+        const uname = login.trim().toLowerCase();
+        const { publicKey, publicKeyAlgo } = await createStoredIdentityKeys();
+        const dto = await apiSignUp({
+          username: uname,
+          email: email.trim().toLowerCase(),
+          password,
+          publicKey,
+          publicKeyAlgo,
+        });
+        establishSession(dto, {
+          message: "Аккаунт создан. Добро пожаловать!",
+          openOnboarding: true,
+        });
+      } else {
+        const dto = await apiSignIn({
+          login: login.trim(),
+          password,
+        });
+        establishSession(dto, {
+          message: "Добро пожаловать!",
+          openOnboarding: false,
+        });
+      }
+    } catch (err) {
+      if (err instanceof WebCryptoUnavailableError) {
+        setBanner(err.message);
+      } else if (err instanceof AuthApiError) {
+        const f = err.fields;
+        const fieldErrors: AuthFieldErrors = {};
+        if (f?.username) fieldErrors.login = f.username;
+        if (f?.login) fieldErrors.login = f.login;
+        if (f?.email) fieldErrors.email = f.email;
+        if (f?.password) fieldErrors.password = f.password;
+        if (Object.keys(fieldErrors).length > 0) setErrors(fieldErrors);
+        setBanner(err.message);
+      } else {
+        const text =
+          err instanceof Error ?
+            err.message
+          : "Не удалось связаться с сервером.";
+        setBanner(text);
+      }
+    } finally {
+      setSubmitBusy(false);
+    }
   }
 
   return (
@@ -155,37 +202,6 @@ export function AuthScreen() {
                     : "Войдите по логину и паролю, чтобы продолжить."}
                 </p>
               </header>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-[52px] flex-1 rounded-[10px] border-zinc-800 bg-transparent px-8 text-lg font-normal text-white hover:border-zinc-700 hover:bg-white/[0.04] sm:px-12"
-                  onClick={() =>
-                    setBanner("Вход через Google — в разработке")
-                  }
-                >
-                  <GoogleGlyph className="shrink-0" />
-                  Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-[52px] flex-1 rounded-[10px] border-zinc-800 bg-transparent px-8 text-lg font-normal text-white hover:border-zinc-700 hover:bg-white/[0.04] sm:px-12"
-                  onClick={() =>
-                    setBanner("Вход через Яндекс — в разработке")
-                  }
-                >
-                  <YandexGlyph className="shrink-0" />
-                  Яндекс
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-3 px-0.5">
-                <div className="h-px flex-1 bg-zinc-800/90" />
-                <span className="text-base text-neutral-500">Или</span>
-                <div className="h-px flex-1 bg-zinc-800/90" />
-              </div>
 
               <form
                 className="flex flex-col gap-10"
@@ -353,6 +369,7 @@ export function AuthScreen() {
                 <div className="flex flex-col items-stretch gap-3">
                   <button
                     type="submit"
+                    disabled={submitBusy}
                     className={cn(
                       "h-12 w-full min-h-12 rounded-[10px] bg-white text-lg font-normal text-black",
                       "outline outline-1 outline-offset-[-1px] outline-black/80",
@@ -360,7 +377,7 @@ export function AuthScreen() {
                       "hover:bg-neutral-100 hover:shadow-md",
                       "active:scale-[0.99] active:bg-neutral-200 motion-reduce:active:scale-100",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#121212]",
-                      "touch-manipulation disabled:opacity-50",
+                      "touch-manipulation disabled:pointer-events-none disabled:opacity-45",
                     )}
                   >
                     {mode === "sign-up" ? "Зарегистрироваться" : "Войти"}

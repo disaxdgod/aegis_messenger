@@ -179,18 +179,19 @@ export function PostMediaCarousel({
     if (!el || items.length <= 1) {
       return;
     }
+    const scroller = el;
     function onWheel(ev: WheelEvent) {
       const dx = ev.deltaX;
       const dy = ev.deltaY;
       const dominantHorizontal =
         Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 0.5;
       if (ev.shiftKey || dominantHorizontal) {
-        el.scrollLeft += dominantHorizontal ? dx : dy;
+        scroller.scrollLeft += dominantHorizontal ? dx : dy;
         ev.preventDefault();
       }
     }
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroller.removeEventListener("wheel", onWheel);
   }, [items.length]);
 
   const goTo = useCallback(

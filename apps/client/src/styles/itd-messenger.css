@@ -311,7 +311,7 @@ body.itd-messages-page #root {
   line-height: 16px;
   text-align: center;
   color: #fff;
-  background-color: var(--accent-like);
+  background-color: var(--accent-primary);
   border-radius: 8px;
 }
 

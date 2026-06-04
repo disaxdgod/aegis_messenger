@@ -1,7 +1,29 @@
+import {
+  DEMO_EMPLOYEES,
+  demoEmployeeDisplayName,
+} from "@/data/demo-seed";
+import { authorSubscriptionKey } from "@/lib/author-subscription-key";
+import { syncMutualDmAfterSubscriptionChange } from "@/lib/mutual-dm-sync";
 import { create } from "zustand";
 
-export function authorSubscriptionKey(name: string) {
-  return name.trim().toLowerCase();
+export { authorSubscriptionKey } from "@/lib/author-subscription-key";
+
+/** С кем уже взаимная подписка при старте демо (остальные — только подписчики). */
+const DEMO_INITIAL_MUTUAL_FOLLOWS = ["german_h", "a_sokolova", "e_kuznetsova"] as const;
+
+function buildInitialSubscriptions(): Record<string, true> {
+  const byUsername = Object.fromEntries(
+    DEMO_EMPLOYEES.map((e) => [e.username, e]),
+  );
+  const entries: [string, true][] = [];
+  for (const username of DEMO_INITIAL_MUTUAL_FOLLOWS) {
+    const employee = byUsername[username];
+    if (!employee) {
+      continue;
+    }
+    entries.push([authorSubscriptionKey(demoEmployeeDisplayName(employee)), true]);
+  }
+  return Object.fromEntries(entries);
 }
 
 type AuthorSubscriptionsState = {
@@ -14,13 +36,14 @@ type AuthorSubscriptionsState = {
 
 export const useAuthorSubscriptionsStore = create<AuthorSubscriptionsState>(
   (set, get) => ({
-    subscribedKeys: {},
+    subscribedKeys: buildInitialSubscriptions(),
     subscribe: (authorName) => {
       const k = authorSubscriptionKey(authorName);
       if (!k) return;
       set((s) => ({
         subscribedKeys: { ...s.subscribedKeys, [k]: true },
       }));
+      syncMutualDmAfterSubscriptionChange(authorName);
     },
     unsubscribe: (authorName) => {
       const k = authorSubscriptionKey(authorName);
@@ -28,6 +51,7 @@ export const useAuthorSubscriptionsStore = create<AuthorSubscriptionsState>(
         const { [k]: _, ...rest } = s.subscribedKeys;
         return { subscribedKeys: rest };
       });
+      syncMutualDmAfterSubscriptionChange(authorName);
     },
     toggleSubscribe: (authorName) => {
       const k = authorSubscriptionKey(authorName);

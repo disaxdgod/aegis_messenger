@@ -1,3 +1,4 @@
+import { ProfileConnectionsModal } from "@/components/messenger/ProfileConnectionsModal";
 import { IconBell, IconCalendar, IconUser } from "@/components/messenger/nav-icons";
 import { BannerDrawModal } from "@/components/messenger/BannerDrawModal";
 import { PostCard } from "@/components/messenger/PostCard";
@@ -6,12 +7,33 @@ import { IconDesignTheme } from "@/components/messenger/design-theme-icons";
 import { AvatarCropModal } from "@/components/messenger/AvatarCropModal";
 import { PresenceStatusMenu } from "@/components/messenger/PresenceStatusMenu";
 import { cn } from "@/lib/utils";
+import { demoEmployeeDisplayName } from "@/data/demo-seed";
+import { currentUserDisplayName } from "@/lib/current-user-display";
+import {
+  countFollowers,
+  countFollowing,
+  getFollowerProfiles,
+  getFollowingProfiles,
+} from "@/lib/social-graph";
+import {
+  employeeAvatarUrl,
+  employeeRoleLine,
+  findEmployeeByUsername,
+  normalizeProfileUsername,
+} from "@/lib/profile-directory";
+import { useAppNavStore } from "@/stores/app-nav-store";
+import { scheduleBannerDrawMessageNotification } from "@/stores/demo-notification-store";
+import {
+  useAuthorSubscriptionsStore,
+  useIsSubscribedToAuthor,
+} from "@/stores/author-subscriptions-store";
 import { usePostsStore } from "@/stores/posts-store";
 import { useProfileStore } from "@/stores/profile-store";
 import { useSessionStore } from "@/stores/session-store";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 type ProfileTab = "posts" | "likes";
+type ConnectionsModal = "followers" | "following" | null;
 
 const PAGE_BG = "var(--bg-primary)";
 const CARD = "var(--block-bg)";
@@ -25,6 +47,36 @@ function getAvatarFallback(name: string): string {
     return "?";
   }
   return trimmed[0]?.toUpperCase() ?? "?";
+}
+
+function ProfileConnectionStat({
+  count,
+  label,
+  onOpen,
+}: {
+  count: number;
+  label: string;
+  onOpen: () => void;
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="font-semibold text-theme-text transition-colors duration-150 hover:text-[var(--accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)]"
+        aria-label={`${count} ${label}`}
+      >
+        {count}
+      </button>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="cursor-pointer text-neutral-500 underline-offset-2 transition-[color,text-decoration-color] duration-150 hover:text-theme-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)]"
+      >
+        {label}
+      </button>
+    </span>
+  );
 }
 
 function AvatarBlock({
@@ -79,6 +131,29 @@ function AvatarBlock({
   );
 }
 
+function ReadonlyAvatarBlock({
+  avatarUrl,
+  displayName,
+}: {
+  avatarUrl: string | null;
+  displayName: string;
+}) {
+  return (
+    <div className="relative shrink-0">
+      <div
+        className="flex h-[112px] w-[112px] items-center justify-center overflow-hidden rounded-full border-[5px] bg-theme-card text-[2.65rem] text-theme-text sm:h-[120px] sm:w-[120px] sm:text-[2.85rem]"
+        style={{ borderColor: PAGE_BG }}
+      >
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span aria-hidden>{getAvatarFallback(displayName)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ProfilePage() {
   const signOut = useSessionStore((s) => s.signOut);
   const username = useProfileStore((s) => s.username);
@@ -91,15 +166,81 @@ export function ProfilePage() {
   const setStatus = useProfileStore((s) => s.setStatus);
   const setAvatarFromBlob = useProfileStore((s) => s.setAvatarFromBlob);
   const setBannerFromBlob = useProfileStore((s) => s.setBannerFromBlob);
+  const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
   const bannerObjectUrl = useProfileStore((s) => s.bannerObjectUrl);
   const posts = usePostsStore((s) => s.posts);
+  const profileViewUsername = useAppNavStore((s) => s.profileViewUsername);
+  const subscribedKeys = useAuthorSubscriptionsStore((s) => s.subscribedKeys);
+  const ownPosts = useMemo(
+    () => posts.filter((p) => p.isOwn),
+    [posts],
+  );
 
-  const [tab, setTab] = useState<ProfileTab>("posts");
+  const isOwnProfile =
+    !profileViewUsername ||
+    normalizeProfileUsername(profileViewUsername) ===
+      normalizeProfileUsername(username);
+
+  const viewedEmployee = useMemo(
+    () =>
+      isOwnProfile ? null : findEmployeeByUsername(profileViewUsername ?? ""),
+    [isOwnProfile, profileViewUsername],
+  );
+
+  const headerDisplayName = isOwnProfile
+    ? currentUserDisplayName(firstName, lastName, username)
+    : viewedEmployee
+      ? demoEmployeeDisplayName(viewedEmployee)
+      : (profileViewUsername ?? "Пользователь");
+
+  const headerUsername = isOwnProfile
+    ? username
+    : (viewedEmployee?.username ?? profileViewUsername ?? "");
+
+  const headerAvatarUrl = isOwnProfile
+    ? avatarObjectUrl
+    : viewedEmployee
+      ? employeeAvatarUrl(viewedEmployee)
+      : null;
+
+  const headerRoleLine = viewedEmployee ? employeeRoleLine(viewedEmployee) : null;
+
+  const profilePosts = useMemo(() => {
+    if (isOwnProfile) {
+      return ownPosts;
+    }
+    const handle = normalizeProfileUsername(headerUsername);
+    return posts.filter(
+      (p) => normalizeProfileUsername(p.author.username) === handle,
+    );
+  }, [isOwnProfile, ownPosts, posts, headerUsername]);
+
+  const isSubscribed = useIsSubscribedToAuthor(headerDisplayName);
+  const toggleSubscribe = useAuthorSubscriptionsStore((s) => s.toggleSubscribe);
+
+  const followersCount = useMemo(
+    () => countFollowers(headerUsername, username, subscribedKeys),
+    [headerUsername, username, subscribedKeys],
+  );
+  const followingCount = useMemo(
+    () => countFollowing(headerUsername, username, subscribedKeys),
+    [headerUsername, username, subscribedKeys],
+  );
+  const followerProfiles = useMemo(
+    () => getFollowerProfiles(headerUsername, username, subscribedKeys),
+    [headerUsername, username, subscribedKeys],
+  );
+  const followingProfiles = useMemo(
+    () => getFollowingProfiles(headerUsername, username, subscribedKeys),
+    [headerUsername, username, subscribedKeys],
+  );
 
   const initialPostIds = useRef<Set<string> | null>(null);
   if (initialPostIds.current === null) {
-    initialPostIds.current = new Set(posts.map((p) => p.id));
+    initialPostIds.current = new Set(profilePosts.map((p) => p.id));
   }
+  const [tab, setTab] = useState<ProfileTab>("posts");
+  const [connectionsModal, setConnectionsModal] = useState<ConnectionsModal>(null);
   const [bannerEditorOpen, setBannerEditorOpen] = useState(false);
   const [postComposerOpen, setPostComposerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -113,7 +254,6 @@ export function ProfilePage() {
   // Privacy
   const [privacyWall, setPrivacyWall] = useState<"all" | "friends" | "nobody">("all");
   const [privacyLikes, setPrivacyLikes] = useState<"all" | "friends" | "nobody">("all");
-  const [showOnlineStatus, setShowOnlineStatus] = useState(true);
 
   // Notifications
   const [notifAll, setNotifAll] = useState(true);
@@ -146,12 +286,13 @@ export function ProfilePage() {
     };
   }, [settingsOpen]);
 
-  const displayName =
-    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-    "Диса Бендер";
+  const displayName = headerDisplayName;
 
   function openSettings() {
-    setDraftDisplayName(displayName);
+    if (!isOwnProfile) {
+      return;
+    }
+    setDraftDisplayName(currentUserDisplayName(firstName, lastName, username));
     setDraftUsername(username);
     setDraftStatus(status);
     setSettingsTab("account");
@@ -210,7 +351,10 @@ export function ProfilePage() {
       <BannerDrawModal
         open={bannerEditorOpen}
         onClose={() => setBannerEditorOpen(false)}
-        onComplete={(blob) => setBannerFromBlob(blob)}
+        onComplete={(blob) => {
+          setBannerFromBlob(blob);
+          scheduleBannerDrawMessageNotification();
+        }}
       />
       {postComposerOpen ? (
         <div
@@ -419,7 +563,7 @@ export function ProfilePage() {
                       <div className="space-y-3 py-4 sm:hidden">
                         <button
                           type="button"
-                          onClick={signOut}
+                          onClick={() => void signOut()}
                           className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/50 px-4 py-3 text-[14px] font-semibold text-red-400 transition-[background-color,transform] duration-150 hover:bg-red-500/10 active:scale-[0.98]"
                         >
                           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -497,25 +641,6 @@ export function ProfilePage() {
                         <option value="friends">Друзья</option>
                         <option value="nobody">Никто</option>
                       </select>
-                    </div>
-                    {/* Онлайн-статус */}
-                    <div className="flex items-center justify-between gap-6 border-b border-theme-border py-5">
-                      <div>
-                        <p className="text-[15px] font-semibold text-theme-text">Онлайн-статус</p>
-                        <p className="mt-0.5 text-[13px] text-theme-text-2">Показывать время последнего визита</p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={showOnlineStatus}
-                        onClick={() => setShowOnlineStatus((v) => !v)}
-                        className={cn(
-                          "relative h-[28px] w-[50px] shrink-0 rounded-full transition-colors duration-200",
-                          showOnlineStatus ? "bg-[#53a5ea]" : "bg-theme-card-3",
-                        )}
-                      >
-                        <span className="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-[left] duration-200" style={{ left: showOnlineStatus ? 25 : 3 }} />
-                      </button>
                     </div>
                     {/* Чёрный список */}
                     <div className="pt-5">
@@ -662,13 +787,15 @@ export function ProfilePage() {
       ) : null}
 
       <div className="mb-5 flex justify-end lg:hidden">
-        <button
-          type="button"
-          onClick={signOut}
-          className="rounded-full border border-theme-border bg-theme-card px-4 py-2 text-xs font-medium text-theme-text-2 transition-[color,border-color,transform] duration-150 hover:border-theme-border hover:text-theme-text active:scale-[0.96]"
-        >
-          Выйти
-        </button>
+        {isOwnProfile ? (
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="rounded-full border border-theme-border bg-theme-card px-4 py-2 text-xs font-medium text-theme-text-2 transition-[color,border-color,transform] duration-150 hover:border-theme-border hover:text-theme-text active:scale-[0.96]"
+          >
+            Выйти
+          </button>
+        ) : null}
       </div>
 
       <section
@@ -680,7 +807,7 @@ export function ProfilePage() {
           className="relative h-[176px] overflow-hidden rounded-t-3xl sm:h-[192px]"
           style={{ backgroundColor: SURFACE_LIFT }}
         >
-          {bannerObjectUrl ? (
+          {isOwnProfile && bannerObjectUrl ? (
             <img
               src={bannerObjectUrl}
               alt=""
@@ -693,34 +820,58 @@ export function ProfilePage() {
             className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent"
             aria-hidden
           />
-          <button
-            type="button"
-            onClick={() => setBannerEditorOpen(true)}
-            className={cn(
-              "absolute bottom-3 right-3 z-[30] flex h-10 w-10 items-center justify-center rounded-xl",
-              "border border-theme-border bg-theme-card text-theme-text shadow-[0_4px_20px_rgba(0,0,0,0.2)] backdrop-blur-md",
-              "transition-[color,background-color,border-color,transform] duration-200 ease-out",
-              "hover:border-theme-border hover:bg-theme-card-2 hover:text-theme-text",
-              "active:scale-[0.96] motion-reduce:active:scale-100",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-            )}
-            aria-label="Изменить баннер профиля"
-          >
-            <IconDesignTheme className="h-[20px] w-[20px] opacity-95" />
-          </button>
+          {isOwnProfile ? (
+            <button
+              type="button"
+              onClick={() => setBannerEditorOpen(true)}
+              className={cn(
+                "absolute bottom-3 right-3 z-[30] flex h-10 w-10 items-center justify-center rounded-xl",
+                "border border-theme-border bg-theme-card text-theme-text shadow-[0_4px_20px_rgba(0,0,0,0.2)] backdrop-blur-md",
+                "transition-[color,background-color,border-color,transform] duration-200 ease-out",
+                "hover:border-theme-border hover:bg-theme-card-2 hover:text-theme-text",
+                "active:scale-[0.96] motion-reduce:active:scale-100",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
+              )}
+              aria-label="Изменить баннер профиля"
+            >
+              <IconDesignTheme className="h-[20px] w-[20px] opacity-95" />
+            </button>
+          ) : null}
         </div>
 
         <div className="relative rounded-b-3xl px-5 pb-8 pt-0 sm:px-8 sm:pb-10">
           <div className="relative z-10 -mt-[58px] flex flex-wrap items-end justify-between gap-4 sm:-mt-[62px]">
-            <AvatarBlock onPick={openCropForFile} displayName={displayName} />
+            {isOwnProfile ? (
+              <AvatarBlock onPick={openCropForFile} displayName={displayName} />
+            ) : (
+              <ReadonlyAvatarBlock
+                avatarUrl={headerAvatarUrl}
+                displayName={displayName}
+              />
+            )}
             <div className="mb-1 flex flex-wrap items-center justify-end gap-2 sm:gap-2.5">
-              <button
-                type="button"
-                onClick={openSettings}
-                className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-[background-color,transform] duration-150 hover:bg-neutral-100 active:scale-[0.96] active:bg-neutral-200"
-              >
-                Редактировать
-              </button>
+              {isOwnProfile ? (
+                <button
+                  type="button"
+                  onClick={openSettings}
+                  className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-[background-color,transform] duration-150 hover:bg-neutral-100 active:scale-[0.96] active:bg-neutral-200"
+                >
+                  Редактировать
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => toggleSubscribe(headerDisplayName)}
+                  className={cn(
+                    "rounded-full px-5 py-2 text-sm font-semibold transition-[background-color,transform] duration-150 active:scale-[0.96]",
+                    isSubscribed
+                      ? "border border-theme-border bg-theme-card text-theme-text hover:bg-theme-hover"
+                      : "bg-white text-black hover:bg-neutral-100 active:bg-neutral-200",
+                  )}
+                >
+                  {isSubscribed ? "Отписаться" : "Подписаться"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -729,15 +880,29 @@ export function ProfilePage() {
               <h1 className="text-[1.35rem] font-bold tracking-tight text-theme-text sm:text-2xl">
                 {displayName}
               </h1>
-              <span className="text-[15px] text-neutral-500">@{username}</span>
+              <span className="text-[15px] text-neutral-500">@{headerUsername}</span>
             </div>
-            {status.trim() ? (
+            {isOwnProfile && status.trim() ? (
               <p className="mt-2 text-[1.02rem] text-theme-text">{status.trim()}</p>
             ) : null}
+            {!isOwnProfile && headerRoleLine ? (
+              <p className="mt-2 text-[1.02rem] text-theme-text-2">{headerRoleLine}</p>
+            ) : null}
 
-            <p className="mt-3 text-sm text-neutral-500">
-              <span className="font-semibold text-theme-text">0</span> подписчиков ·{" "}
-              <span className="font-semibold text-theme-text">0</span> подписок
+            <p className="mt-3 flex flex-wrap items-center gap-x-2 text-sm">
+              <ProfileConnectionStat
+                count={followersCount}
+                label="подписчиков"
+                onOpen={() => setConnectionsModal("followers")}
+              />
+              <span className="text-neutral-500" aria-hidden>
+                ·
+              </span>
+              <ProfileConnectionStat
+                count={followingCount}
+                label="подписок"
+                onOpen={() => setConnectionsModal("following")}
+              />
             </p>
 
             <p className="mt-2.5 flex items-center gap-2 text-xs text-neutral-500">
@@ -786,27 +951,31 @@ export function ProfilePage() {
             </button>
           </div>
 
-          <div className="mt-5 hidden lg:block">
-            <PostComposer
-              className="rounded-2xl p-4 sm:p-5"
-              style={{ backgroundColor: SURFACE_LIFT }}
-            />
-          </div>
-          <div className="mt-5 lg:hidden">
-            <button
-              type="button"
-              className="h-11 w-full rounded-full px-4 text-sm font-semibold tracking-tight text-theme-text transition-[transform,opacity] duration-150 active:scale-[0.97] active:opacity-85"
-              style={{ backgroundColor: TAB_ACTIVE }}
-              onClick={() => setPostComposerOpen(true)}
-            >
-              Создать публикацию
-            </button>
-          </div>
+          {isOwnProfile ? (
+            <>
+              <div className="mt-5 hidden lg:block">
+                <PostComposer
+                  className="rounded-2xl p-4 sm:p-5"
+                  style={{ backgroundColor: SURFACE_LIFT }}
+                />
+              </div>
+              <div className="mt-5 lg:hidden">
+                <button
+                  type="button"
+                  className="h-11 w-full rounded-full px-4 text-sm font-semibold tracking-tight text-theme-text transition-[transform,opacity] duration-150 active:scale-[0.97] active:opacity-85"
+                  style={{ backgroundColor: TAB_ACTIVE }}
+                  onClick={() => setPostComposerOpen(true)}
+                >
+                  Создать публикацию
+                </button>
+              </div>
+            </>
+          ) : null}
 
           {tab === "posts" ? (
-            posts.length > 0 ? (
+            profilePosts.length > 0 ? (
               <div className="mt-6 flex flex-col gap-4">
-                {posts.map((p) => (
+                {profilePosts.map((p) => (
                   <div
                     key={p.id}
                     style={
@@ -831,6 +1000,21 @@ export function ProfilePage() {
           )}
         </div>
       </section>
+
+      <ProfileConnectionsModal
+        open={connectionsModal === "followers"}
+        title={`Кто подписан · ${displayName}`}
+        emptyText="Пока нет подписчиков"
+        profiles={followerProfiles}
+        onClose={() => setConnectionsModal(null)}
+      />
+      <ProfileConnectionsModal
+        open={connectionsModal === "following"}
+        title={`На кого подписан · ${displayName}`}
+        emptyText="Пока нет подписок"
+        profiles={followingProfiles}
+        onClose={() => setConnectionsModal(null)}
+      />
     </div>
   );
 }

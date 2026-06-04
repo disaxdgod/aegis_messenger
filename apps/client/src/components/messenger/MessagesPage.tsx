@@ -1,8 +1,10 @@
 import { EmojiMartModal } from "@/components/messenger/EmojiMartModal";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
+import { TextFormatSelectionModal } from "@/components/messenger/TextFormatSelectionModal";
 import { MessengerConfirmModal } from "@/components/messenger/MessengerConfirmModal";
 import { PostImagePreview } from "@/components/messenger/PostImagePreview";
 import { SendMediaAttachmentModal } from "@/components/messenger/SendMediaAttachmentModal";
+import { useWebRtcCalls } from "@/components/calls/webrtc-call-provider";
 import {
   IconMessages,
   IconPaperclip,
@@ -10,12 +12,25 @@ import {
   IconSendPlane,
   IconSmile,
 } from "@/components/messenger/nav-icons";
+import {
+  COMPRESSIBLE_IMAGE_TYPES,
+  compressImageIfNeeded,
+} from "@/lib/compress-image-if-needed";
 import { splitEmojiAware } from "@/lib/split-emoji-text";
+import {
+  clearAllDemoPeerReplyTimers,
+  registerDmActiveChatResolver,
+} from "@/lib/demo-dm-auto-reply";
+import { syncAllMutualDmChats } from "@/lib/mutual-dm-sync";
+import type { SelectionSnapshot } from "@/lib/markdown-selection";
+import { isDmChatUnlocked } from "@/lib/social-graph";
 import { cn } from "@/lib/utils";
-import type { InboxChatItem as ChatItem, InboxMessageItem as MessageItem } from "@/stores/dm-inbox-store";
+import type { InboxChatItem as ChatItem } from "@/stores/dm-inbox-store";
 import { inboxNowTimeLabel, useDmInboxStore } from "@/stores/dm-inbox-store";
 import { useAppNavStore } from "@/stores/app-nav-store";
+import { useAuthorSubscriptionsStore } from "@/stores/author-subscriptions-store";
 import { usePostsStore } from "@/stores/posts-store";
+import { useProfileStore } from "@/stores/profile-store";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 type PendingRecordedAttachment = {
@@ -397,6 +412,13 @@ function presenceLabel(presence: ChatItem["presence"]) {
   return "Не в сети";
 }
 
+function chatSubtitle(chat: ChatItem, isTyping: boolean) {
+  if (isTyping) {
+    return "Печатает...";
+  }
+  return presenceLabel(chat.presence);
+}
+
 function presenceDotClass(presence: ChatItem["presence"]) {
   if (presence === "online") {
     return "bg-emerald-400";
@@ -526,11 +548,15 @@ function VoiceAttachmentPlayer({
   src,
   durationSec: durationProp,
   fromMe,
+  messageTime,
+  status,
   className,
 }: {
   src: string;
   durationSec?: number;
   fromMe: boolean;
+  messageTime?: string;
+  status?: "sent" | "delivered" | "read";
   className?: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -538,7 +564,7 @@ function VoiceAttachmentPlayer({
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(() => (durationProp && durationProp > 0 ? durationProp : 0));
 
-  const barCount = 52;
+  const barCount = 42;
   const factors = useMemo(() => voiceWaveFactors(src, barCount), [src]);
 
   useEffect(() => {
@@ -562,16 +588,20 @@ function VoiceAttachmentPlayer({
   const progress = duration > 0 ? Math.min(1, current / duration) : 0;
   const activeThru = progress * factors.length;
 
-  const remaining = duration > 0 ? Math.max(0, duration - current) : 0;
-  const timeLabel = duration > 0 ? formatVoiceClock(Math.floor(remaining)) : "—";
+  const durationLabel =
+    duration > 0
+      ? formatVoiceClock(Math.floor(playing || current > 0 ? current : duration))
+      : "—";
+
+  const waveActive = fromMe ? "var(--dm-voice-wave)" : "var(--accent-primary)";
+  const waveMuted = fromMe
+    ? "var(--dm-voice-wave-muted)"
+    : "color-mix(in srgb, var(--accent-primary) 30%, transparent)";
 
   return (
     <div
       className={cn(
-        "flex min-w-[220px] max-w-[min(100%,340px)] items-center gap-2 rounded-2xl border px-2.5 py-2",
-        fromMe
-          ? "border-[color:var(--accent-primary)]/35 bg-[color:color-mix(in_srgb,var(--accent-primary)_18%,#1f2430)]"
-          : "border-theme-border bg-theme-card-2",
+        "flex min-w-[232px] max-w-[min(100%,300px)] items-start gap-2.5",
         className,
       )}
     >
@@ -601,45 +631,61 @@ function VoiceAttachmentPlayer({
         type="button"
         onClick={toggle}
         className={cn(
-          "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white shadow-sm transition-[transform,background-color] active:scale-95",
-          "bg-[var(--accent-primary)] hover:brightness-110",
+          "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full transition-[transform,filter] active:scale-95",
+          fromMe
+            ? "bg-[var(--dm-voice-play-bg)] text-[#15263d] shadow-[0_2px_10px_rgba(0,0,0,0.18)] hover:brightness-105"
+            : "bg-[var(--accent-primary)] text-white hover:brightness-110",
         )}
         aria-label={playing ? "Пауза" : "Воспроизвести"}
       >
         {playing ? (
-          <VoicePauseGlyph className="h-[17px] w-[17px]" />
+          <VoicePauseGlyph className="h-[15px] w-[15px]" />
         ) : (
-          <VoicePlayGlyph className="h-[18px] w-[18px] translate-x-[2px]" />
+          <VoicePlayGlyph className="h-[17px] w-[17px] translate-x-[1px]" />
         )}
       </button>
-      <div className="flex h-9 min-w-0 flex-1 items-center justify-center gap-[2px] px-0.5">
-        {factors.map((f, i) => {
-          const edge = activeThru - i;
-          const playedFull = edge >= 1;
-          const partial = edge > 0 && edge < 1;
-          const hPx = Math.round(4 + f * 20);
-          const opacity =
-            playedFull ? 1 : partial ? 0.28 + edge * 0.72 : 0.26;
-          return (
-            <div
-              key={i}
+      <div className="min-w-0 flex-1">
+        <div className="flex h-9 items-end gap-[2px] px-0.5">
+          {factors.map((f, i) => {
+            const edge = activeThru - i;
+            const playedFull = edge >= 1;
+            const partial = edge > 0 && edge < 1;
+            const hPx = Math.round(4 + f * 24);
+            return (
+              <div
+                key={i}
+                className="w-[2px] shrink-0 rounded-full transition-[height,background-color,opacity] duration-100 ease-out"
+                style={{
+                  height: `${hPx}px`,
+                  backgroundColor: playedFull || partial ? waveActive : waveMuted,
+                  opacity: partial ? 0.42 + edge * 0.58 : 1,
+                }}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3 pr-0.5">
+          <span
+            className={cn(
+              "shrink-0 tabular-nums text-[12px] font-medium leading-none tracking-tight",
+              fromMe ? "text-[var(--dm-voice-duration)]" : "text-[var(--accent-primary)]",
+            )}
+          >
+            {durationLabel}
+          </span>
+          {messageTime ? (
+            <p
               className={cn(
-                "w-[2px] shrink-0 rounded-full transition-[opacity,height,background-color] duration-100 ease-out",
-                playedFull || partial ? "bg-[var(--accent-primary)]" : "bg-neutral-500/65",
+                "flex shrink-0 items-center gap-1 text-[12px] leading-none",
+                fromMe ? "text-white/62" : "text-theme-text-2",
               )}
-              style={{ height: `${hPx}px`, opacity }}
-            />
-          );
-        })}
+            >
+              <span>{messageTime}</span>
+              {fromMe && status ? <MessageStatusTicks status={status} /> : null}
+            </p>
+          ) : null}
+        </div>
       </div>
-      <span
-        className={cn(
-          "min-w-[40px] shrink-0 rounded-md bg-black/20 px-1.5 py-0.5 text-center tabular-nums text-[11px] font-medium tracking-tight",
-          fromMe ? "text-theme-text" : "text-theme-text-2",
-        )}
-      >
-        {timeLabel}
-      </span>
     </div>
   );
 }
@@ -800,35 +846,6 @@ function pickVideoNoteMime(): string {
   return "";
 }
 
-/** MIME-типы, для которых применяется сжатие через browser-image-compression. */
-const COMPRESSIBLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-/**
- * Сжимает изображение через browser-image-compression с Web Worker.
- * Возвращает оригинал, если:
- *   — тип файла не входит в COMPRESSIBLE_IMAGE_TYPES,
- *   — или isSendAsFileChecked === true,
- *   — или сжатие падает с ошибкой (fallback).
- */
-async function compressImageIfNeeded(file: File, isSendAsFileChecked: boolean): Promise<File> {
-  if (isSendAsFileChecked || !COMPRESSIBLE_IMAGE_TYPES.has(file.type)) {
-    return file;
-  }
-  try {
-    const imageCompression = (await import("browser-image-compression")).default;
-    const compressed = await imageCompression(file, {
-      maxSizeMB: 1,
-      maxWidthOrHeight: 1920,
-      useWebWorker: true,
-      initialQuality: 0.8,
-    });
-    return new File([compressed], file.name, { type: compressed.type || file.type });
-  } catch (err) {
-    console.warn("[compressImageIfNeeded] compression failed, using original file:", err);
-    return file;
-  }
-}
-
 /** Тот же breakpoint, что и Tailwind `lg:` (1024px) — чтобы не монтировать чат дважды. */
 const DESKTOP_LG_MEDIA = "(min-width: 1024px)";
 
@@ -854,7 +871,13 @@ export function MessagesPage() {
   );
   const chats = useDmInboxStore((s) => s.chats);
   const messagesByChat = useDmInboxStore((s) => s.messagesByChat);
+  const username = useProfileStore((s) => s.username);
+  const subscribedKeys = useAuthorSubscriptionsStore((s) => s.subscribedKeys);
+  const typingByChatId = useDmInboxStore((s) => s.typingByChatId);
   const patchChatPreview = useDmInboxStore((s) => s.patchChatPreview);
+  const markChatRead = useDmInboxStore((s) => s.markChatRead);
+  const pendingOpenChatId = useDmInboxStore((s) => s.pendingOpenChatId);
+  const consumePendingOpenChat = useDmInboxStore((s) => s.consumePendingOpenChat);
   const appendOutgoingMessage = useDmInboxStore((s) => s.appendOutgoingMessage);
   const clearChatMessagesStore = useDmInboxStore((s) => s.clearChatMessages);
   const removeChatStore = useDmInboxStore((s) => s.removeChat);
@@ -863,6 +886,8 @@ export function MessagesPage() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [fmtOpen, setFmtOpen] = useState(false);
+  const [fmtSnap, setFmtSnap] = useState<SelectionSnapshot | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -876,6 +901,7 @@ export function MessagesPage() {
   const [isResizingPane, setIsResizingPane] = useState(false);
   const initialMsgIds = useRef<Map<string, Set<string>>>(new Map());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fmtTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const attachmentUrlsRef = useRef<string[]>([]);
@@ -891,6 +917,7 @@ export function MessagesPage() {
     startTs: number;
   } | null>(null);
   const [voiceUiMode, setVoiceUiMode] = useState<"mic" | "circle">("mic");
+  const webrtcCalls = useWebRtcCalls();
   const [isRecordingMedia, setIsRecordingMedia] = useState(false);
   const [voiceControlLiftPx, setVoiceControlLiftPx] = useState(0);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
@@ -917,14 +944,43 @@ export function MessagesPage() {
     chatId: null,
     count: 0,
   });
+  const viewingChatIdRef = useRef<string | null>(null);
   const voiceUiModeRef = useRef(voiceUiMode);
   voiceUiModeRef.current = voiceUiMode;
   const expandedLeftPane = leftPaneWidth >= SIDEBAR_LIST_EXPANDED_MIN;
 
+  function closeFormatModal() {
+    setFmtOpen(false);
+    setFmtSnap(null);
+  }
+
+  function scheduleFormatOpen() {
+    if (fmtTimerRef.current) {
+      clearTimeout(fmtTimerRef.current);
+    }
+    fmtTimerRef.current = setTimeout(() => {
+      fmtTimerRef.current = null;
+      const ta = textareaRef.current;
+      if (!ta) {
+        return;
+      }
+      const s = ta.selectionStart;
+      const e = ta.selectionEnd;
+      if (s < e) {
+        setFmtSnap({ start: s, end: e });
+        setFmtOpen(true);
+        return;
+      }
+      closeFormatModal();
+    }, 220);
+  }
+
   function openChat(chatId: string) {
     setActiveChatId(chatId);
+    markChatRead(chatId);
     setMobileChatOpen(true);
     setDraft("");
+    closeFormatModal();
     setPendingFile(null);
     clearPendingRecordedAttachment();
     setVoiceUiMode("mic");
@@ -936,10 +992,31 @@ export function MessagesPage() {
   }
 
   useEffect(() => {
+    registerDmActiveChatResolver((chatId) => viewingChatIdRef.current === chatId);
+    return () => {
+      registerDmActiveChatResolver(null);
+      clearAllDemoPeerReplyTimers();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingOpenChatId) {
+      return;
+    }
+    const chatId = consumePendingOpenChat();
+    if (chatId) {
+      openChat(chatId);
+    }
+  }, [pendingOpenChatId, consumePendingOpenChat]);
+
+  useEffect(() => {
     return () => {
       stopRecordingVisualizer();
       if (recordHoldTimerRef.current) {
         clearTimeout(recordHoldTimerRef.current);
+      }
+      if (fmtTimerRef.current) {
+        clearTimeout(fmtTimerRef.current);
       }
       const s = recordSessionRef.current;
       if (s) {
@@ -1078,23 +1155,72 @@ export function MessagesPage() {
     };
   }, []);
 
+  useEffect(() => {
+    syncAllMutualDmChats();
+  }, [username, subscribedKeys]);
+
+  const visibleChats = useMemo(
+    () =>
+      chats.filter((chat) =>
+        isDmChatUnlocked(chat, username, subscribedKeys, {
+          messageCount: (messagesByChat[chat.id] ?? []).length,
+        }),
+      ),
+    [chats, username, subscribedKeys, messagesByChat],
+  );
+
+  useEffect(() => {
+    if (
+      activeChatId &&
+      !visibleChats.some((chat) => chat.id === activeChatId)
+    ) {
+      setActiveChatId(null);
+      setMobileChatOpen(false);
+    }
+  }, [activeChatId, visibleChats]);
+
   const filteredChats = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) {
-      return chats;
+      return visibleChats;
     }
-    return chats.filter(
+    return visibleChats.filter(
       (chat) =>
         chat.name.toLowerCase().includes(needle) ||
         chat.handle.toLowerCase().includes(needle) ||
         chat.lastMessage.toLowerCase().includes(needle),
     );
-  }, [query, chats]);
+  }, [query, visibleChats]);
 
   const desktopActiveChatId = activeChatId ?? filteredChats[0]?.id ?? null;
   const activeChat =
     filteredChats.find((chat) => chat.id === desktopActiveChatId) ?? null;
   const messages = activeChat ? (messagesByChat[activeChat.id] ?? []) : [];
+  viewingChatIdRef.current = isDesktopLg
+    ? desktopActiveChatId
+    : mobileChatOpen
+      ? activeChatId
+      : null;
+  const activeChatTyping = activeChat ? Boolean(typingByChatId[activeChat.id]) : false;
+
+  function initiateDmCall(kind: "audio" | "video"): void {
+    setHeaderMenuOpen(false);
+    if (!activeChat) return;
+    const backendId = activeChat.backendChatId?.trim();
+    if (!backendId) {
+      window.alert(
+        "Звонок доступен только для реального диалога: укажите backendChatId у чата (ID из API после интеграции списка DM).",
+      );
+      return;
+    }
+    if (!webrtcCalls.socketConnected) {
+      window.alert(
+        "Нет живого Socket.IO (войдите в аккаунт и держите сервер запущенным).",
+      );
+      return;
+    }
+    webrtcCalls.startOutgoingChatCall(backendId, kind, activeChat.name);
+  }
 
   useEffect(() => {
     const prev = prevMessagesStateRef.current;
@@ -1177,6 +1303,7 @@ export function MessagesPage() {
     if (resetComposer) {
       setDraft("");
       setEmojiOpen(false);
+      closeFormatModal();
     }
   }
 
@@ -1275,14 +1402,17 @@ export function MessagesPage() {
         recordAudioCtxRef.current = audioCtx;
         recordAnalyserRef.current = analyser;
         recordAnalyserDataRef.current = timeData;
-        const barsCount = 28;
         const animateBars = () => {
           const node = recordAnalyserRef.current;
           const data = recordAnalyserDataRef.current;
           if (!node || !data) {
             return;
           }
-          node.getByteTimeDomainData(data);
+          node.getByteTimeDomainData(
+            data as unknown as Parameters<
+              typeof node.getByteTimeDomainData
+            >[0],
+          );
           let sumSq = 0;
           for (let i = 0; i < data.length; i++) {
             const centered = (data[i] - 128) / 128;
@@ -1452,10 +1582,6 @@ export function MessagesPage() {
     const hadDragIntent = voiceDragIntentRef.current;
     voiceDragIntentRef.current = false;
     setVoiceControlLiftPx(0);
-    if (pendingRecordedAttachment) {
-      sendRecordedByMic();
-      return;
-    }
     if (recordSessionRef.current) {
       if (!recordingAtPointerDownRef.current && startedByCurrentPressRef.current) {
         // Отпускание после long-press не останавливает запись.
@@ -1503,10 +1629,6 @@ export function MessagesPage() {
   function onVoiceControlClick() {
     if (suppressNextVoiceClickRef.current) {
       suppressNextVoiceClickRef.current = false;
-      return;
-    }
-    if (pendingRecordedAttachment) {
-      sendRecordedByMic();
       return;
     }
     if (isRecordingMedia) {
@@ -1569,7 +1691,7 @@ export function MessagesPage() {
     0,
     VIDEO_NOTE_MAX_DURATION_SEC - recordingElapsedSec,
   );
-  const showSendPlane = trimmedDraft.length > 0;
+  const showSendPlane = trimmedDraft.length > 0 || Boolean(pendingRecordedAttachment);
   const showVoiceUi = !pendingFile && !showSendPlane;
 
   useEffect(() => {
@@ -1627,6 +1749,7 @@ export function MessagesPage() {
         {filteredChats.map((chat) => {
           const active = chat.id === desktopActiveChatId;
           const dotCls = presenceDotClass(chat.presence);
+          const isTyping = Boolean(typingByChatId[chat.id]);
           return (
             <li key={chat.id}>
               <button
@@ -1663,7 +1786,14 @@ export function MessagesPage() {
                     <p className="truncate text-sm font-semibold text-theme-text">{chat.name}</p>
                     <span className="shrink-0 text-[11px] text-theme-text-2">{chat.lastAt}</span>
                   </div>
-                  <p className="truncate text-xs text-theme-text-2">{presenceLabel(chat.presence)}</p>
+                  <p
+                    className={cn(
+                      "truncate text-xs",
+                      isTyping ? "text-emerald-400" : "text-theme-text-2",
+                    )}
+                  >
+                    {chatSubtitle(chat, isTyping)}
+                  </p>
                   <p className="mt-0.5 truncate text-xs text-theme-text-2">{chat.lastMessage}</p>
                 </div>
               </button>
@@ -1720,7 +1850,14 @@ export function MessagesPage() {
         <div className="relative flex min-w-0 flex-1 items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-theme-text">{activeChat.name}</p>
-            <p className="truncate text-xs text-theme-text-2">{presenceLabel(activeChat.presence)}</p>
+            <p
+              className={cn(
+                "truncate text-xs",
+                activeChatTyping ? "text-emerald-400" : "text-theme-text-2",
+              )}
+            >
+              {chatSubtitle(activeChat, activeChatTyping)}
+            </p>
           </div>
           <div className="shrink-0">
             <button
@@ -1746,7 +1883,7 @@ export function MessagesPage() {
                 type="button"
                 role="menuitem"
                 className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
-                onClick={() => setHeaderMenuOpen(false)}
+                onClick={() => initiateDmCall("audio")}
               >
                 <IconPhoneOutline className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>Позвонить</span>
@@ -1755,7 +1892,7 @@ export function MessagesPage() {
                 type="button"
                 role="menuitem"
                 className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm text-theme-text transition-[background-color,transform] duration-150 hover:bg-theme-hover active:scale-[0.97]"
-                onClick={() => setHeaderMenuOpen(false)}
+                onClick={() => initiateDmCall("video")}
               >
                 <IconVideoOutline className="h-4 w-4 shrink-0 text-theme-text-2" />
                 <span>Видеозвонок</span>
@@ -1829,7 +1966,10 @@ export function MessagesPage() {
             : message.attachment
               ? null
               : parseForwardedFeedPost(message.text);
-          const showMessageBubble = message.text.trim().length > 0;
+          const isVoiceOnly =
+            !message.text.trim() && message.attachment?.kind === "voice";
+          const showMessageBubble =
+            message.text.trim().length > 0 || isVoiceOnly;
           const emojiParts = showMessageBubble && !message.attachment
             ? splitEmojiAware(message.text).filter(
                 (p) => p.kind === "emoji" || p.value.trim().length > 0,
@@ -1867,7 +2007,9 @@ export function MessagesPage() {
                   ? "w-2/3 min-w-0 shrink-0"
                   : "max-w-[82%]",
                 hasBubble
-                  ? "rounded-2xl px-3 py-2"
+                  ? isVoiceOnly
+                    ? "rounded-[18px] px-2.5 py-2"
+                    : "rounded-2xl px-3 py-2"
                   : "px-0 py-0",
                 message.fromMe
                   ? hasBubble
@@ -1974,6 +2116,8 @@ export function MessagesPage() {
                           src={a.url}
                           durationSec={a.durationSec}
                           fromMe={message.fromMe}
+                          messageTime={isVoiceOnly ? message.time : undefined}
+                          status={isVoiceOnly ? message.status : undefined}
                         />
                       </div>
                     );
@@ -2042,6 +2186,7 @@ export function MessagesPage() {
                 })()
               ) : null}
               {!message.text || forwardedPost ? (
+                !isVoiceOnly ? (
                 <p
                   className={cn(
                     "mt-1 flex items-center justify-end gap-1 text-[13px] leading-none lg:text-[12px]",
@@ -2053,6 +2198,7 @@ export function MessagesPage() {
                     <MessageStatusTicks status={message.status} />
                   ) : null}
                 </p>
+                ) : null
               ) : null}
             </div>
           </div>
@@ -2182,15 +2328,6 @@ export function MessagesPage() {
               >
                 Отмена
               </button>
-              {!isRecordingMedia && pendingRecordedAttachment ? (
-                <button
-                  type="button"
-                  className="shrink-0 text-xs text-theme-text transition-[color,transform] duration-150 hover:text-theme-text active:scale-90"
-                  onClick={sendRecordedByMic}
-                >
-                  Отправить
-                </button>
-              ) : null}
             </div>
           ) : (
             <>
@@ -2198,7 +2335,14 @@ export function MessagesPage() {
                 ref={textareaRef}
                 rows={1}
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  if (fmtOpen && e.target.selectionStart === e.target.selectionEnd) {
+                    closeFormatModal();
+                  }
+                }}
+                onMouseUp={scheduleFormatOpen}
+                onSelect={scheduleFormatOpen}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -2222,8 +2366,16 @@ export function MessagesPage() {
             <button
               type="button"
               className="grid h-9 w-9 place-items-center rounded-xl text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
-              onClick={sendComposerMessage}
-              aria-label="Отправить"
+              onClick={() => {
+                if (pendingRecordedAttachment) {
+                  sendRecordedByMic();
+                } else {
+                  sendComposerMessage();
+                }
+              }}
+              aria-label={
+                pendingRecordedAttachment ? "Отправить запись" : "Отправить"
+              }
             >
               <IconSendPlane className="h-5 w-5" />
             </button>
@@ -2252,16 +2404,12 @@ export function MessagesPage() {
               aria-label={
                 isRecordingMedia
                   ? "Отпустите, чтобы остановить запись"
-                  : pendingRecordedAttachment
-                    ? "Нажмите, чтобы отправить запись"
                   : voiceUiMode === "circle"
                     ? "Видеокружок: удерживайте для записи, нажмите для голоса"
                     : "Голос: удерживайте для записи, нажмите для видеокружка"
               }
             >
-              {pendingRecordedAttachment ? (
-                <IconMic className="h-[18px] w-[18px]" />
-              ) : voiceUiMode === "circle" ? (
+              {voiceUiMode === "circle" ? (
                 <IconVideoCircle className="h-[18px] w-[18px]" />
               ) : (
                 <IconMic className="h-[18px] w-[18px]" />
@@ -2290,6 +2438,16 @@ export function MessagesPage() {
         open={emojiOpen}
         onClose={() => setEmojiOpen(false)}
         onPick={insertEmoji}
+      />
+      <TextFormatSelectionModal
+        open={fmtOpen}
+        snapshot={fmtSnap}
+        text={draft}
+        textareaRef={textareaRef}
+        onApply={(next) => {
+          setDraft(next);
+        }}
+        onClose={closeFormatModal}
       />
 
       {dmImagePreview && (

@@ -1,4 +1,10 @@
 import { IconCheckVerified, IconSearch } from "@/components/messenger/nav-icons";
+import {
+  DEMO_EMPLOYEES,
+  demoAvatar,
+  demoEmployeeDisplayName,
+} from "@/data/demo-seed";
+import { currentUserDisplayName, currentUserHandle } from "@/lib/current-user-display";
 import { cn } from "@/lib/utils";
 import {
   aggregateHashtagStats,
@@ -19,7 +25,8 @@ type SearchPerson = {
   id: string;
   displayName: string;
   username: string;
-  emoji: string | null;
+  avatarUrl: string;
+  role: string;
   verified?: boolean;
 };
 
@@ -33,14 +40,6 @@ const RESULT_ROW_CLASS =
 
 const AVATAR_BOX_CLASS =
   "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-theme-border bg-theme-card text-xl leading-none";
-
-function getAvatarFallback(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    return "?";
-  }
-  return trimmed[0]?.toUpperCase() ?? "?";
-}
 
 function HashtagResultRow({
   tag,
@@ -79,7 +78,7 @@ export function SearchPage() {
   const lastName = useProfileStore((s) => s.lastName);
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
   const openHashtagFeed = useAppNavStore((s) => s.openHashtagFeed);
-  const setScreen = useAppNavStore((s) => s.setScreen);
+  const openProfile = useAppNavStore((s) => s.openProfile);
   const [query, setQuery] = useState("");
 
   const trimmed = query.trim();
@@ -87,17 +86,30 @@ export function SearchPage() {
   const showLiveResults = trimmed.length > 0;
 
   const selfPerson: SearchPerson = useMemo(() => {
-    const displayName =
-      [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-      "Диса Бендер";
+    const handle = currentUserHandle(username);
+    const displayName = currentUserDisplayName(firstName, lastName, username);
     return {
       id: "me",
       displayName,
-      username,
-      emoji: null,
+      username: handle,
+      avatarUrl: avatarObjectUrl ?? demoAvatar(handle),
+      role: "Практикант",
       verified: true,
     };
-  }, [firstName, lastName, username]);
+  }, [firstName, lastName, username, avatarObjectUrl]);
+
+  const directoryPeople = useMemo(
+    () =>
+      DEMO_EMPLOYEES.map((e) => ({
+        id: e.id,
+        displayName: demoEmployeeDisplayName(e),
+        username: e.username,
+        avatarUrl: demoAvatar(e.username),
+        role: `${e.role} · ${e.department}`,
+        verified: e.verified,
+      })),
+    [],
+  );
 
   const hashtagIndex = useMemo(
     () => aggregateHashtagStats(posts).sort((a, b) => b.count - a.count),
@@ -108,15 +120,16 @@ export function SearchPage() {
     if (!needle) {
       return [];
     }
-    const p = selfPerson;
-    if (
-      p.displayName.toLowerCase().includes(needle) ||
-      p.username.toLowerCase().includes(needle)
-    ) {
-      return [p];
-    }
-    return [];
-  }, [selfPerson, needle]);
+    const merged = directoryPeople.map((p) =>
+      p.username === selfPerson.username ? selfPerson : p,
+    );
+    return merged.filter(
+      (p) =>
+        p.displayName.toLowerCase().includes(needle) ||
+        p.username.toLowerCase().includes(needle) ||
+        p.role.toLowerCase().includes(needle),
+    );
+  }, [directoryPeople, selfPerson, needle]);
 
   const filteredHashtags = useMemo(() => {
     if (!needle) {
@@ -135,8 +148,8 @@ export function SearchPage() {
     }
     if (q.startsWith("@")) {
       const handle = q.slice(1).trim().split(/\s+/u)[0] ?? "";
-      if (handle.toLowerCase() === username.toLowerCase()) {
-        setScreen("profile");
+      if (handle) {
+        openProfile({ username: handle });
         setQuery("");
         return;
       }
@@ -194,20 +207,16 @@ export function SearchPage() {
                   <li key={p.id}>
                     <button
                       type="button"
-                      onClick={() => setScreen("profile")}
+                      onClick={() => openProfile({ username: p.username, displayName: p.displayName })}
                       className={RESULT_ROW_CLASS}
                       style={{ backgroundColor: SURFACE }}
                     >
                       <div className={AVATAR_BOX_CLASS}>
-                        {avatarObjectUrl ? (
-                          <img
-                            src={avatarObjectUrl}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <span aria-hidden>{getAvatarFallback(p.displayName)}</span>
-                        )}
+                        <img
+                          src={p.avatarUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
                       </div>
                       <div className="min-w-0 flex-1 text-left">
                         <div className="flex items-center gap-1.5">
@@ -220,6 +229,9 @@ export function SearchPage() {
                         </div>
                         <div className="truncate text-sm text-theme-text-2">
                           @{p.username}
+                        </div>
+                        <div className="truncate text-xs text-theme-text-2">
+                          {p.role}
                         </div>
                       </div>
                     </button>
@@ -260,11 +272,64 @@ export function SearchPage() {
           </section>
         </div>
       ) : (
-        <section
-          className="rounded-3xl border border-theme-border p-5 sm:p-6"
-          style={{ backgroundColor: CARD }}
-          aria-label="Популярные хештеги"
-        >
+        <div className="space-y-8">
+          <section aria-label="Коллеги">
+            <h2 className="mb-4 text-lg font-semibold text-theme-text">
+              Сотрудники организации
+            </h2>
+            <ul className="flex flex-col gap-2">
+              {directoryPeople.map((p) => {
+                const person =
+                  p.username === selfPerson.username ? selfPerson : p;
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (person.id === "me" || person.username === selfPerson.username) {
+                          openProfile();
+                        } else {
+                          openProfile({ username: person.username, displayName: person.displayName });
+                        }
+                      }}
+                      className={RESULT_ROW_CLASS}
+                      style={{ backgroundColor: SURFACE }}
+                    >
+                      <div className={AVATAR_BOX_CLASS}>
+                        <img
+                          src={person.avatarUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[15px] font-semibold text-theme-text">
+                            {person.displayName}
+                          </span>
+                          {person.verified ? (
+                            <IconCheckVerified className="shrink-0" />
+                          ) : null}
+                        </div>
+                        <div className="truncate text-sm text-theme-text-2">
+                          @{person.username}
+                        </div>
+                        <div className="truncate text-xs text-theme-text-2">
+                          {person.role}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <section
+            className="rounded-3xl border border-theme-border p-5 sm:p-6"
+            style={{ backgroundColor: CARD }}
+            aria-label="Популярные хештеги"
+          >
           <h2 className="mb-4 text-lg font-semibold text-theme-text">
             Популярные хештеги
           </h2>
@@ -288,6 +353,7 @@ export function SearchPage() {
             </p>
           )}
         </section>
+        </div>
       )}
     </div>
   );

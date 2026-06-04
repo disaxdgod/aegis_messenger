@@ -1,99 +1,90 @@
+import "dotenv/config";
+
+import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
+
 import {
-  API_HEALTH_PATH,
-  API_VERSION,
+  API_PREFIX,
   APP_NAME,
-  SOCKET_SERVER_EVENTS,
 } from "@aegis/shared";
-import type { HealthResponseDTO } from "@aegis/shared";
-import cors from "cors";
-import express from "express";
-import { createServer } from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import type { Application as ExpressApplication } from "express";
 import { Server as SocketIOServer } from "socket.io";
+
+import { createExpressApp } from "./create-app.js";
+import { env } from "./config/env.js";
+import { setSocketIo } from "./io-holder.js";
 import { prisma } from "./lib/prisma.js";
+import { attachSocket } from "./socket/register-socket.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+function createHttpLikeServer(
+  app: ExpressApplication,
+): http.Server | https.Server {
+  const keyPath = process.env["HTTPS_KEY_PATH"]?.trim();
+  const certPath = process.env["HTTPS_CERT_PATH"]?.trim();
+  if (keyPath && certPath) {
+    const key = fs.readFileSync(keyPath);
+    const cert = fs.readFileSync(certPath);
+    return https.createServer({ key, cert }, app);
+  }
+  return http.createServer(app);
+}
 
-const startedAt = Date.now();
+async function bootstrap(): Promise<void> {
+  const startedAt = Date.now();
 
-const PORT = Number(process.env.PORT) || 3000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
-const isProduction = process.env.NODE_ENV === "production";
+  const app = createExpressApp(startedAt);
+  const PORT = env.port;
 
-const app = express();
-app.use(
-  cors({
-    origin: isProduction ? CLIENT_ORIGIN : true,
-    credentials: true,
-  }),
-);
-app.use(express.json({ limit: "256kb" }));
+  const httpServer = createHttpLikeServer(app);
 
-app.get(API_HEALTH_PATH, async (_req, res) => {
-  let database: HealthResponseDTO["database"] = "down";
+  const io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: env.isProduction ? env.clientOrigin : true,
+      credentials: true,
+    },
+  });
+
+  setSocketIo(io);
+  attachSocket(io);
+
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    database = "up";
-  } catch {
-    database = "down";
+    await prisma.$connect();
+  } catch (e) {
+    console.error(
+      `[${APP_NAME}] Нет соединения с PostgreSQL.\n` +
+        "Поднимите БД (`pnpm compose:postgres`), проверьте DATABASE_URL,\n" +
+        "при первом разе: `pnpm db:migrate` или для dev — `pnpm db:push`.",
+    );
+    console.error(e);
+    process.exit(1);
   }
 
-  const body: HealthResponseDTO = {
-    ok: true,
-    app: APP_NAME,
-    apiVersion: API_VERSION,
-    database,
-    uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-  };
-  res.json(body);
-});
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\n[${APP_NAME}] Порт ${PORT} уже занят (EADDRINUSE).\n` +
+          `Освободите порт или задайте PORT в .env.`,
+      );
+    } else {
+      console.error(err);
+    }
+    process.exit(1);
+  });
 
-if (isProduction) {
-  const clientDist =
-    process.env.CLIENT_DIST_PATH?.trim() ||
-    path.join(__dirname, "..", "..", "..", "apps", "client", "dist");
-  app.use(express.static(clientDist));
-  app.get(/^(?!\/api).*$/, (_req, res) => {
-    res.sendFile(path.join(clientDist, "index.html"));
+  httpServer.listen(PORT, () => {
+    const scheme =
+      process.env["HTTPS_KEY_PATH"]?.trim() &&
+      process.env["HTTPS_CERT_PATH"]?.trim() ?
+        "https"
+      : "http";
+    console.log(
+      `[${APP_NAME}] ${scheme}://localhost:${PORT} · REST ${API_PREFIX} · WebSocket тот же хост`,
+    );
   });
 }
 
-const httpServer = createServer(app);
-
-const io = new SocketIOServer(httpServer, {
-  cors: { origin: isProduction ? CLIENT_ORIGIN : true },
-});
-
-io.on("connection", (socket) => {
-  socket.emit(SOCKET_SERVER_EVENTS.hello, {
-    app: APP_NAME,
-    apiVersion: API_VERSION,
-    at: new Date().toISOString(),
-  });
-});
-
-httpServer.on("error", (err: NodeJS.ErrnoException) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `\n[${APP_NAME}] Порт ${PORT} уже занят (EADDRINUSE).\n` +
-        `Освободите порт или запустите сервер на другом:\n` +
-        `  PowerShell — кто слушает порт:\n` +
-        `    Get-NetTCPConnection -LocalPort ${PORT} -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess\n` +
-        `  Остановить процесс (подставьте PID из колонки OwningProcess):\n` +
-        `    Stop-Process -Id <PID> -Force\n` +
-        `  Либо другой порт для сервера и прокси Vite:\n` +
-        `    $env:PORT="3001"; pnpm --filter @aegis/server dev\n` +
-        `    В apps/client скопируйте .env.development.example → .env.development и укажите VITE_API_TARGET=http://127.0.0.1:3001\n`,
-    );
-  } else {
-    console.error(err);
-  }
+bootstrap().catch((e) => {
+  console.error(e);
   process.exit(1);
-});
-
-httpServer.listen(PORT, () => {
-  console.log(
-    `[${APP_NAME}] HTTP + WebSocket: http://localhost:${PORT} (CORS: ${CLIENT_ORIGIN})`,
-  );
 });

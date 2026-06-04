@@ -7,9 +7,12 @@ import {
   IconUser,
 } from "@/components/messenger/nav-icons";
 import { IconDesignMoon, IconDesignSun } from "@/components/messenger/design-theme-icons";
+import { NavCountBadge } from "@/components/messenger/NavCountBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import { useAppNavStore } from "@/stores/app-nav-store";
+import { useUnreadAlertsCount } from "@/stores/demo-notification-store";
+import { useUnreadMessagesCount } from "@/stores/dm-inbox-store";
 import { useSessionStore } from "@/stores/session-store";
 
 const navItem =
@@ -27,6 +30,18 @@ export function MessengerSidebar() {
   const searchActive = screen === "search" || screen === "hashtag-feed";
   const messagesActive = screen === "messages";
   const alertsActive = screen === "alerts";
+  const messagesUnread = useUnreadMessagesCount();
+  const alertsUnread = useUnreadAlertsCount();
+
+  const navBadgeCount = (s: "messages" | "alerts" | string) => {
+    if (s === "messages") {
+      return messagesUnread;
+    }
+    if (s === "alerts") {
+      return alertsUnread;
+    }
+    return 0;
+  };
 
   return (
     <aside
@@ -62,7 +77,8 @@ export function MessengerSidebar() {
             aria-current={active ? "page" : undefined}
           >
             <Icon className="shrink-0 transition-transform duration-150 group-active:scale-90" />
-            {label}
+            <span className="min-w-0 flex-1">{label}</span>
+            <NavCountBadge count={navBadgeCount(s)} />
           </button>
         ))}
       </nav>
@@ -89,7 +105,7 @@ export function MessengerSidebar() {
         <button
           type="button"
           className={cn(navItem, "hover:text-red-400 active:text-red-400")}
-          onClick={signOut}
+          onClick={() => void signOut()}
         >
           <IconLogout />
           Выйти

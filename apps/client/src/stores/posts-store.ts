@@ -1,3 +1,7 @@
+import {
+  DEMO_SEED_NEXT_SEQ,
+  DEMO_SEED_POSTS,
+} from "@/data/demo-seed";
 import { createClientId } from "@/lib/create-client-id";
 import { create } from "zustand";
 
@@ -34,6 +38,12 @@ export type PostStats = {
   liked: boolean;
 };
 
+export type PostAuthor = {
+  name: string;
+  username: string;
+  avatarUrl: string | null;
+};
+
 export type PostEntity = {
   id: string;
   /** Короткий номер для URL (`?post=1`), монотонно растёт. */
@@ -42,6 +52,9 @@ export type PostEntity = {
   createdAt: number;
   /** Время последнего изменения текста; `null` — не редактировался. */
   editedAt: number | null;
+  author: PostAuthor;
+  /** Свой пост — доступны редактирование и удаление в UI. */
+  isOwn?: boolean;
   media: PostMediaItem[];
   poll: PostPollData | null;
   stats: PostStats;
@@ -86,8 +99,8 @@ type PostsState = {
 };
 
 export const usePostsStore = create<PostsState>((set, get) => ({
-  posts: [],
-  nextSeq: 1,
+  posts: DEMO_SEED_POSTS,
+  nextSeq: DEMO_SEED_NEXT_SEQ,
 
   addPost: (post) => {
     const seq = get().nextSeq;

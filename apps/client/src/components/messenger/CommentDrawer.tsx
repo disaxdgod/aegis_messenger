@@ -1,14 +1,23 @@
+import { EmojiMartModal } from "@/components/messenger/EmojiMartModal";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { IconRepost, IconSendPlane } from "@/components/messenger/nav-icons";
 import { PostImagePreview } from "@/components/messenger/PostImagePreview";
+import { PostAuthorMeta } from "@/components/messenger/PostAuthorMeta";
+import { ProfileLink } from "@/components/messenger/ProfileLink";
+import { SendMediaAttachmentModal } from "@/components/messenger/SendMediaAttachmentModal";
+import {
+  COMPRESSIBLE_IMAGE_TYPES,
+  compressImageIfNeeded,
+} from "@/lib/compress-image-if-needed";
 import { cn } from "@/lib/utils";
+import { currentUserDisplayName, currentUserHandle } from "@/lib/current-user-display";
 import {
   authorSubscriptionKey,
   useAuthorSubscriptionsStore,
   useIsSubscribedToAuthor,
 } from "@/stores/author-subscriptions-store";
 import { useAppNavStore } from "@/stores/app-nav-store";
-import { useCommentsStore } from "@/stores/comments-store";
+import { useCommentsStore, type CommentAttachment, type CommentEntity } from "@/stores/comments-store";
 import type { PostEntity } from "@/stores/posts-store";
 import { usePostsStore } from "@/stores/posts-store";
 import { useProfileStore } from "@/stores/profile-store";
@@ -187,7 +196,7 @@ function CommentModalPostPreview({
   onImageClick: (imageUrl: string) => void;
 }) {
   const openHashtagFeed = useAppNavStore((s) => s.openHashtagFeed);
-  const setScreen = useAppNavStore((s) => s.setScreen);
+  const openProfile = useAppNavStore((s) => s.openProfile);
   const toggleLike = usePostsStore((s) => s.toggleLike);
   const voteInPoll = usePostsStore((s) => s.voteInPoll);
   const postLive = usePostsStore((s) => s.posts.find((p) => p.id === post.id));
@@ -198,10 +207,8 @@ function CommentModalPostPreview({
   const lastName = useProfileStore((s) => s.lastName);
   const username = useProfileStore((s) => s.username);
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
-  const myDisplayName =
-    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-    "Диса Бендер";
-  const voterId = username.trim().toLowerCase() || myDisplayName.toLowerCase();
+  const myDisplayName = currentUserDisplayName(firstName, lastName, username);
+  const voterId = currentUserHandle(username).toLowerCase();
   const isSelf =
     authorSubscriptionKey(authorName) === authorSubscriptionKey(myDisplayName);
   const isSubscribed = useIsSubscribedToAuthor(authorName);
@@ -308,7 +315,7 @@ function CommentModalPostPreview({
                           setVotersListOpen(false);
                           setSelectedPollOptionId(null);
                           setVotersSearch("");
-                          setScreen("profile");
+                          openProfile({ username: vote.username, displayName: vote.name });
                         }}
                       >
                         <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card-2 text-xs text-theme-text">
@@ -370,7 +377,7 @@ function CommentModalPostPreview({
                                 setVotersListOpen(false);
                                 setSelectedPollOptionId(null);
                                 setVotersSearch("");
-                                setScreen("profile");
+                                openProfile({ username: vote.username, displayName: vote.name });
                               }}
                             >
                               {vote.avatarUrl ? (
@@ -424,12 +431,19 @@ function CommentModalPostPreview({
       ) : null}
 
       <div className="flex items-center gap-3">
-        <UserAvatar src={authorAvatar} name={authorName} size={44} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold leading-snug text-[var(--link-color)]">
-            {authorName}
-          </p>
-        </div>
+        <ProfileLink
+          username={post.author.username}
+          displayName={authorName}
+          onNavigate={onClose}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)]"
+        >
+          <UserAvatar src={authorAvatar} name={authorName} size={44} />
+          <PostAuthorMeta
+            displayName={authorName}
+            createdAt={post.createdAt}
+            editedAt={post.editedAt}
+          />
+        </ProfileLink>
         <div className="flex shrink-0 items-center gap-2">
           {!isSelf ? (
             <button
@@ -675,6 +689,34 @@ function UserAvatar({
   );
 }
 
+/* ───────── comment tree ───────── */
+
+function countCommentBranch(node: CommentRowProps): number {
+  return 1 + node.replies.reduce((sum, child) => sum + countCommentBranch(child), 0);
+}
+
+function buildCommentTree(
+  comments: CommentEntity[],
+  parentId: string | null,
+  ctx: {
+    currentUserName: string;
+    currentUserAvatar: string | null;
+    onReplyTarget: (id: string, name: string) => void;
+  },
+): CommentRowProps[] {
+  return comments
+    .filter((c) => c.parentId === parentId)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((c) => ({
+      ...c,
+      isReply: parentId !== null,
+      currentUserName: ctx.currentUserName,
+      currentUserAvatar: ctx.currentUserAvatar,
+      onReplyTarget: ctx.onReplyTarget,
+      replies: buildCommentTree(comments, c.id, ctx),
+    }));
+}
+
 /* ───────── single comment row ───────── */
 
 type CommentRowProps = {
@@ -687,6 +729,7 @@ type CommentRowProps = {
   authorAvatar: string | null;
   likes: number;
   liked: boolean;
+  attachment?: CommentAttachment | null;
   isReply?: boolean;
   currentUserName: string;
   currentUserAvatar: string | null;
@@ -702,6 +745,7 @@ function CommentRow({
   authorAvatar,
   likes,
   liked,
+  attachment,
   isReply = false,
   currentUserName,
   currentUserAvatar,
@@ -715,16 +759,54 @@ function CommentRow({
       <UserAvatar src={authorAvatar} name={authorName} size={isReply ? 28 : 34} />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="text-[13px] font-semibold leading-none text-[var(--link-color)]">
+          <ProfileLink
+            displayName={authorName}
+            className="text-[13px] font-semibold leading-none text-[var(--link-color)]"
+          >
             {authorName}
-          </span>
+          </ProfileLink>
           <span className="text-[11px] leading-none text-theme-text-2">
             {formatTime(createdAt)}
           </span>
         </div>
-        <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-snug text-theme-text">
-          <MarkdownEmojiText text={text} />
-        </p>
+        {text.trim() ? (
+          <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-snug text-theme-text">
+            <MarkdownEmojiText text={text} />
+          </p>
+        ) : null}
+        {attachment?.kind === "image" ? (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 block outline-none focus-visible:ring-2 focus-visible:ring-[#53a5ea]/40"
+          >
+            <img
+              src={attachment.url}
+              alt=""
+              className="max-h-60 max-w-full rounded-lg object-cover"
+            />
+          </a>
+        ) : null}
+        {attachment?.kind === "video" ? (
+          <video
+            src={attachment.url}
+            controls
+            playsInline
+            className="mt-2 max-h-60 max-w-full rounded-lg bg-black"
+          />
+        ) : null}
+        {attachment?.kind === "file" ? (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={attachment.name}
+            className="mt-2 inline-flex max-w-full items-center gap-2 rounded-xl border border-theme-border bg-theme-card-2 px-3 py-2 text-[12px] font-medium text-[var(--link-color)] transition-colors hover:bg-theme-hover"
+          >
+            <span className="truncate">{attachment.name}</span>
+          </a>
+        ) : null}
         <div className="mt-1.5 flex items-center gap-4">
           <button
             type="button"
@@ -766,7 +848,6 @@ function CommentRow({
                 currentUserName={currentUserName}
                 currentUserAvatar={currentUserAvatar}
                 onReplyTarget={onReplyTarget}
-                replies={[]}
               />
             ))}
           </div>
@@ -799,6 +880,7 @@ export function CommentDrawer({
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
   const firstName = useProfileStore((s) => s.firstName);
   const lastName = useProfileStore((s) => s.lastName);
+  const username = useProfileStore((s) => s.username);
   const addComment = useCommentsStore((s) => s.addComment);
   /** Нельзя `.filter()` прямо в селекторе — каждый вызов новый массив → бесконечный цикл useSyncExternalStore. */
   const comments = useCommentsStore((s) => s.comments);
@@ -816,28 +898,35 @@ export function CommentDrawer({
     urls: string[];
     index: number;
   } | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [isCompressingAttachment, setIsCompressingAttachment] = useState(false);
+  const [sendingAttachment, setSendingAttachment] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const displayName =
-    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-    "Диса Бендер";
+  const displayName = currentUserDisplayName(firstName, lastName, username);
 
   useEffect(() => {
     if (!open) {
       setImagePreview(null);
+      setPendingFile(null);
+      setEmojiOpen(false);
     }
   }, [open]);
 
   useEffect(() => {
     if (!open || imagePreview) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (emojiOpen || pendingFile !== null) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, imagePreview]);
+  }, [open, onClose, imagePreview, emojiOpen, pendingFile]);
 
   function openPostImagePreview(url: string) {
     if (!post) return;
@@ -886,15 +975,100 @@ export function CommentDrawer({
     }
   }
 
-  /* build tree: top-level comments + their replies */
-  const roots = allComments.filter((c) => c.parentId === null);
-  const replies = allComments.filter((c) => c.parentId !== null);
+  function insertEmoji(emoji: string) {
+    const el = inputRef.current;
+    if (!el) {
+      setDraft((prev) => prev + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    setDraft((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+    const pos = start + emoji.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
-  const sortedRoots = [...roots].sort((a, b) => {
-    const ad = replies.filter((r) => r.parentId === a.id).length + a.likes;
-    const bd = replies.filter((r) => r.parentId === b.id).length + b.likes;
-    return bd - ad;
-  });
+  async function sendCommentAttachment(
+    file: File,
+    asDocument: boolean,
+    caption: string,
+  ) {
+    setSendingAttachment(true);
+    setIsCompressingAttachment(true);
+    try {
+      const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
+      const fileForSend = await compressImageIfNeeded(file, asDocument);
+      setIsCompressingAttachment(false);
+
+      const url = URL.createObjectURL(fileForSend);
+
+      const kind: "image" | "video" | "file" = asDocument
+        ? "file"
+        : isImage
+          ? "image"
+          : isVideo
+            ? "video"
+            : "file";
+      const wasCompressed =
+        kind === "image" && !asDocument && COMPRESSIBLE_IMAGE_TYPES.has(file.type);
+
+      addComment({
+        postId,
+        parentId: replyTarget?.id ?? null,
+        text: caption.trim(),
+        authorName: displayName,
+        authorAvatar: avatarObjectUrl,
+        attachment: {
+          kind,
+          url,
+          name: fileForSend.name,
+          mime: fileForSend.type || "application/octet-stream",
+          compressed: wasCompressed,
+        },
+      });
+      setReplyTarget(null);
+      setPendingFile(null);
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      }, 60);
+    } finally {
+      setIsCompressingAttachment(false);
+      setSendingAttachment(false);
+    }
+  }
+
+  function handlePickCommentFile(file: File | null) {
+    if (!file) return;
+    setPendingFile(file);
+  }
+
+  /* дерево: корни + вложенные ответы любой глубины */
+  const commentTree = useMemo(() => {
+    const ctx = {
+      currentUserName: displayName,
+      currentUserAvatar: avatarObjectUrl,
+      onReplyTarget: handleReplyTarget,
+    };
+    return buildCommentTree(allComments, null, ctx);
+  }, [allComments, displayName, avatarObjectUrl]);
+
+  const sortedRoots = useMemo(
+    () =>
+      [...commentTree].sort(
+        (a, b) =>
+          countCommentBranch(b) +
+          b.likes -
+          (countCommentBranch(a) + a.likes),
+      ),
+    [commentTree],
+  );
 
   const totalCount = allComments.length;
 
@@ -948,30 +1122,9 @@ export function CommentDrawer({
                 </p>
               </div>
             ) : (
-              sortedRoots.map((root) => {
-                const rootReplies = replies
-                  .filter((r) => r.parentId === root.id)
-                  .sort((a, b) => a.createdAt - b.createdAt)
-                  .map((r) => ({
-                    ...r,
-                    isReply: true,
-                    currentUserName: displayName,
-                    currentUserAvatar: avatarObjectUrl,
-                    onReplyTarget: handleReplyTarget,
-                    replies: [],
-                  }));
-
-                return (
-                  <CommentRow
-                    key={root.id}
-                    {...root}
-                    currentUserName={displayName}
-                    currentUserAvatar={avatarObjectUrl}
-                    onReplyTarget={handleReplyTarget}
-                    replies={rootReplies}
-                  />
-                );
-              })
+              sortedRoots.map((root) => (
+                <CommentRow key={root.id} {...root} />
+              ))
             )}
           </div>
         </div>
@@ -996,10 +1149,20 @@ export function CommentDrawer({
         <div className="flex items-center gap-1.5">
           <UserAvatar src={avatarObjectUrl} name={displayName} size={36} />
           <div className="flex min-w-0 flex-1 items-center gap-1 rounded-2xl border border-theme-border bg-theme-card-2 px-2 py-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="sr-only"
+              onChange={(e) => {
+                handlePickCommentFile(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
+            />
             <button
               type="button"
               className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
               aria-label="Прикрепить файл"
+              onClick={() => fileInputRef.current?.click()}
             >
               <IconPaperclip className="h-[18px] w-[18px]" />
             </button>
@@ -1016,7 +1179,7 @@ export function CommentDrawer({
               type="button"
               className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-theme-text-2 transition-[color,background-color,transform] duration-150 hover:bg-theme-hover hover:text-theme-text active:scale-90"
               aria-label="Эмодзи"
-              onClick={() => inputRef.current?.focus()}
+              onClick={() => setEmojiOpen(true)}
             >
               <IconSmileOutline className="h-[18px] w-[18px]" />
             </button>
@@ -1046,6 +1209,22 @@ export function CommentDrawer({
         onClose={() => setImagePreview(null)}
       />
     ) : null}
+    <EmojiMartModal
+      open={emojiOpen}
+      onClose={() => setEmojiOpen(false)}
+      onPick={insertEmoji}
+      overlayClassName="z-[170]"
+    />
+    <SendMediaAttachmentModal
+      open={pendingFile !== null}
+      file={pendingFile}
+      compressing={isCompressingAttachment}
+      sending={sendingAttachment && !isCompressingAttachment}
+      onClose={() => setPendingFile(null)}
+      onSend={async ({ file, asDocument, caption }) => {
+        await sendCommentAttachment(file, asDocument, caption);
+      }}
+    />
     </>
   );
 }

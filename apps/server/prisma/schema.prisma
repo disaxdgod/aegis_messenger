@@ -1,51 +1,206 @@
-// Aegis — схема для локальной разработки (SQLite). Для продакена задайте DATABASE_URL на PostgreSQL.
-// https://pris.ly/d/prisma-schema
+// Aegis — PostgreSQL. Локально: `docker compose up -d`, затем `DATABASE_URL` из `.env`.
+// Документ / миграции: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+}
+
+enum Presence {
+  ONLINE
+  OFFLINE
+  DND
+  INVISIBLE
+}
+
+enum PublicKeyAlgo {
+  ECDH_P256
+  X25519
+}
+
+enum ChatType {
+  DIRECT
+  GROUP
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum AttachmentKind {
+  IMAGE
+  VIDEO
+  FILE
+  VOICE
+  VIDEO_NOTE
+}
+
+enum ReceiptState {
+  DELIVERED
+  READ
 }
 
 model User {
-  id           String       @id @default(cuid())
-  username     String       @unique
-  passwordHash String?
-  createdAt    DateTime     @default(now())
-  messages     Message[]
-  memberships  ChatMember[]
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  status       String   @default("")
+  birthDate    DateTime? @db.Date
+  avatarUrl    String?
+  bannerUrl    String?
+  presence     Presence @default(OFFLINE)
+  lastSeenAt   DateTime?
+
+  // E2EE: сервер хранит только публичный ключ (просмотры чата — ключ с клиента).
+  publicKey     String?
+  publicKeyAlgo PublicKeyAlgo?
+  publicKeyAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships ChatMember[]
+  messages    Message[]      @relation("MessagesAsSender")
+  receipts    MessageReceipt[]
+  createdChats Chat[]        @relation("ChatsCreated")
+
+  stagedMessageAttachments MessageAttachmentStaging[]
+  refreshTokens            RefreshToken[]
+
+  @@index([username])
+  @@index([email])
 }
 
 model Chat {
-  id        String       @id @default(cuid())
-  name      String?
-  createdAt DateTime     @default(now())
-  members   ChatMember[]
-  messages  Message[]
+  id       String @id @default(cuid())
+  type     ChatType
+  title    String?
+
+  /// Пара DIRECT: нормализованный ключ "minUid:maxUid" для уникальности 1-к-1.
+  directKey String? @unique
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  createdBy   User?    @relation("ChatsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  members  ChatMember[]
+  messages Message[]
+
+  @@index([type, updatedAt])
 }
 
 model ChatMember {
-  id     String @id @default(cuid())
-  chatId String
-  userId String
-  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  chatId            String
+  userId            String
+  role              MemberRole @default(MEMBER)
+  joinedAt          DateTime   @default(now())
+  lastReadMessageId String?
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  lastReadMessage Message? @relation("LastReadByMember", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
 
   @@unique([chatId, userId])
+  @@index([userId])
 }
 
-/// Сообщение в хранилище: только шифротекст + IV (модель E2EE на уровне приложения).
+/// E2EE: только шифротекст, IV и эфемерный публичный ключ ECDH отправителя.
 model Message {
-  id         String   @id @default(cuid())
-  chatId     String
-  senderId   String
-  ciphertext String
-  iv         String
-  createdAt  DateTime @default(now())
-  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  sender     User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  id                       String   @id @default(cuid())
+  chatId                   String
+  senderId                 String
+  clientId                 String
+  ciphertext               String   @db.Text
+  iv                       String
+  algo                     String   @default("AES-GCM")
+  senderEphemeralPublicKey String
 
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  chat        Chat               @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender      User               @relation("MessagesAsSender", fields: [senderId], references: [id], onDelete: Cascade)
+  attachments MessageAttachment[]
+  receipts    MessageReceipt[]
+
+  lastReadBy ChatMember[] @relation("LastReadByMember")
+
+  @@unique([chatId, senderId, clientId])
   @@index([chatId, createdAt])
+}
+
+model MessageAttachment {
+  id           String          @id @default(cuid())
+  messageId    String
+  kind         AttachmentKind
+  mime         String
+  sizeBytes    Int
+  durationSec  Int?
+
+  storageKey    String /// Ключ в хранилище (путь или S3 key) — сырое тело уже ciphertext.
+  iv            String
+  encryptedKey  String
+
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+/// Файлы, загруженные до сообщения; привязываются к `MessageAttachment` при отправке.
+model MessageAttachmentStaging {
+  id           String          @id @default(cuid())
+  userId       String
+  kind         AttachmentKind
+  mime         String
+  sizeBytes    Int
+  durationSec  Int?
+  storageKey   String
+  iv           String
+  encryptedKey String
+  createdAt    DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model MessageReceipt {
+  id        String       @id @default(cuid())
+  messageId String
+  userId    String
+  state     ReceiptState
+  at        DateTime     @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, state])
+  @@index([userId])
 }

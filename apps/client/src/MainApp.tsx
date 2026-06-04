@@ -7,9 +7,12 @@ import { MobileNav } from "@/components/messenger/MobileNav";
 import { OnboardingModal } from "@/components/messenger/OnboardingModal";
 import { ProfilePage } from "@/components/messenger/ProfilePage";
 import { SearchPage } from "@/components/messenger/SearchPage";
+import { MessageNotificationToast } from "@/components/messenger/MessageNotificationToast";
 import { SuccessToast } from "@/components/messenger/SuccessToast";
+import { WebRtcCallsProvider } from "@/components/calls/webrtc-call-provider";
 import { useAppNavStore } from "@/stores/app-nav-store";
 import { usePostCommentsRouteStore } from "@/stores/post-comments-route-store";
+import { useDemoNotificationStore } from "@/stores/demo-notification-store";
 import { useSessionStore } from "@/stores/session-store";
 import { useEffect } from "react";
 
@@ -35,6 +38,8 @@ function MainPanel() {
 export function MainApp() {
   const authSuccessMessage = useSessionStore((s) => s.authSuccessMessage);
   const dismissAuthSuccess = useSessionStore((s) => s.dismissAuthSuccess);
+  const demoNotification = useDemoNotificationStore((s) => s.notification);
+  const dismissDemoNotification = useDemoNotificationStore((s) => s.dismiss);
   const applyRouteFromLocation = useAppNavStore((s) => s.applyRouteFromLocation);
   const syncPostCommentsFromLocation = usePostCommentsRouteStore(
     (s) => s.syncFromLocation,
@@ -52,7 +57,8 @@ export function MainApp() {
   }, [applyRouteFromLocation, syncPostCommentsFromLocation]);
 
   return (
-    <div className="relative min-h-dvh w-full max-w-[100vw] bg-theme-bg font-sans text-theme-text antialiased">
+    <WebRtcCallsProvider>
+      <div className="relative min-h-dvh w-full max-w-[100vw] bg-theme-bg font-sans text-theme-text antialiased">
       {/*
         Плавающий макет: внешние поля у всего UI, внутри — центрированный ряд
         «сайдбар-карточка + контент», без fixed к краям вьюпорта.
@@ -76,7 +82,12 @@ export function MainApp() {
         message={authSuccessMessage}
         onDismiss={dismissAuthSuccess}
       />
+      <MessageNotificationToast
+        notification={demoNotification}
+        onDismiss={dismissDemoNotification}
+      />
       <OnboardingModal />
-    </div>
+      </div>
+    </WebRtcCallsProvider>
   );
 }

@@ -6,16 +6,20 @@
   "scripts": {
     "build:shared": "pnpm --filter @aegis/shared build",
     "build": "pnpm run build:shared && pnpm --filter @aegis/server build && pnpm --filter @aegis/client build",
-    "dev": "pnpm run build:shared && concurrently -n client,server -c blue,green \"pnpm client:dev\" \"pnpm server:dev\"",
+    "compose:postgres": "docker compose up -d postgres",
+    "dev": "pnpm run build:shared && pnpm client:dev",
+    "dev:full": "pnpm run build:shared && concurrently -n client,server -c blue,green \"pnpm client:dev\" \"pnpm server:dev\"",
+    "dev:backend": "pnpm run compose:postgres && pnpm run dev:full",
     "db:generate": "pnpm --filter @aegis/server exec prisma generate",
     "db:push": "pnpm --filter @aegis/server exec prisma db push",
+    "db:migrate": "pnpm --filter @aegis/server run db:migrate:deploy",
     "server:dev": "pnpm --filter @aegis/server dev",
     "client:dev": "pnpm --filter @aegis/client dev",
     "lint": "pnpm --filter @aegis/client lint"
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
-    "onlyBuiltDependencies": ["@prisma/engines", "better-sqlite3", "esbuild", "prisma"]
+    "onlyBuiltDependencies": ["@prisma/engines", "bcrypt", "esbuild", "prisma"]
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

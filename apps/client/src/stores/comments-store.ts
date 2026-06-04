@@ -1,5 +1,14 @@
+import { DEMO_SEED_COMMENTS } from "@/data/demo-seed";
 import { createClientId } from "@/lib/create-client-id";
 import { create } from "zustand";
+
+export type CommentAttachment = {
+  kind: "image" | "video" | "file";
+  url: string;
+  name: string;
+  mime: string;
+  compressed?: boolean;
+};
 
 export type CommentEntity = {
   id: string;
@@ -11,6 +20,7 @@ export type CommentEntity = {
   authorAvatar: string | null;
   likes: number;
   liked: boolean;
+  attachment?: CommentAttachment | null;
 };
 
 type AddCommentInput = Omit<
@@ -27,7 +37,7 @@ type CommentsState = {
 };
 
 export const useCommentsStore = create<CommentsState>((set, get) => ({
-  comments: [],
+  comments: DEMO_SEED_COMMENTS,
 
   addComment: (input) => {
     const id = createClientId();
@@ -43,11 +53,16 @@ export const useCommentsStore = create<CommentsState>((set, get) => ({
   },
 
   removeComment: (id) => {
-    set((s) => ({
-      comments: s.comments.filter(
-        (c) => c.id !== id && c.parentId !== id,
-      ),
-    }));
+    set((s) => {
+      for (const c of s.comments) {
+        if ((c.id === id || c.parentId === id) && c.attachment?.url?.startsWith("blob:")) {
+          URL.revokeObjectURL(c.attachment.url);
+        }
+      }
+      return {
+        comments: s.comments.filter((c) => c.id !== id && c.parentId !== id),
+      };
+    });
   },
 
   toggleLike: (id) => {

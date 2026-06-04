@@ -4,6 +4,8 @@ import { create } from "zustand";
 export type PresenceStatus = "online" | "dnd" | "invisible";
 
 export type ProfileState = {
+  /** id текущего пользователя (JWT / me snapshot), для звонков и проверки в сокете. */
+  userId: string;
   /** Логин без @ (для поиска и шапки профиля). */
   username: string;
   firstName: string;
@@ -15,6 +17,7 @@ export type ProfileState = {
   avatarObjectUrl: string | null;
   /** Баннер профиля (blob: URL), освобождается при смене или сбросе. */
   bannerObjectUrl: string | null;
+  setUserId: (v: string) => void;
   setUsername: (v: string) => void;
   setFirstName: (v: string) => void;
   setLastName: (v: string) => void;
@@ -37,11 +40,13 @@ const textInitial = {
 };
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
+  userId: "",
   username: "",
   ...textInitial,
   presence: "online",
   avatarObjectUrl: null,
   bannerObjectUrl: null,
+  setUserId: (userId) => set({ userId }),
   setUsername: (username) => set({ username }),
   setFirstName: (firstName) => set({ firstName }),
   setLastName: (lastName) => set({ lastName }),
@@ -82,6 +87,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       URL.revokeObjectURL(prevB);
     }
     set({
+      userId: "",
       username: "",
       ...textInitial,
       presence: "online",

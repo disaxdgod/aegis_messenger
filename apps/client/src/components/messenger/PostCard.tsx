@@ -2,8 +2,9 @@ import { CommentDrawer } from "@/components/messenger/CommentDrawer";
 import { MessengerConfirmModal } from "@/components/messenger/MessengerConfirmModal";
 import { PostImagePreview } from "@/components/messenger/PostImagePreview";
 import { PostMediaCarousel } from "@/components/messenger/PostMediaCarousel";
-import {
-  RepostToDirectModal,
+import { PostAuthorMeta } from "@/components/messenger/PostAuthorMeta";
+import { ProfileLink } from "@/components/messenger/ProfileLink";
+import { RepostToDirectModal,
   type RepostForwardPayload,
   type RepostPollPreview,
 } from "@/components/messenger/RepostToDirectModal";
@@ -12,6 +13,7 @@ import { IconMessages, IconRepost } from "@/components/messenger/nav-icons";
 import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { TextFormatSelectionModal } from "@/components/messenger/TextFormatSelectionModal";
 import { cn } from "@/lib/utils";
+import { currentUserDisplayName, currentUserHandle } from "@/lib/current-user-display";
 import type { SelectionSnapshot } from "@/lib/markdown-selection";
 import type { PostEntity, PostMediaItem } from "@/stores/posts-store";
 import { useDmInboxStore } from "@/stores/dm-inbox-store";
@@ -21,27 +23,6 @@ import { useCommentsStore } from "@/stores/comments-store";
 import { usePostCommentsRouteStore } from "@/stores/post-comments-route-store";
 import { useProfileStore } from "@/stores/profile-store";
 import { useEffect, useRef, useState } from "react";
-
-function formatPostTime(ts: number) {
-  const d = new Date(ts);
-  const now = Date.now();
-  const diff = now - ts;
-  if (diff < 60_000) {
-    return "только что";
-  }
-  if (diff < 3600_000) {
-    return `${Math.floor(diff / 60_000)} мин.`;
-  }
-  if (diff < 86400_000) {
-    return `${Math.floor(diff / 3600_000)} ч.`;
-  }
-  return d.toLocaleString("ru-RU", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function fmtCount(n: number): string {
   if (n >= 1_000_000) {
@@ -450,7 +431,7 @@ export function PostCard({ post }: PostCardProps) {
   const removePost = usePostsStore((s) => s.removePost);
   const voteInPoll = usePostsStore((s) => s.voteInPoll);
   const openHashtagFeed = useAppNavStore((s) => s.openHashtagFeed);
-  const setScreen = useAppNavStore((s) => s.setScreen);
+  const openProfile = useAppNavStore((s) => s.openProfile);
 
   const commentCount = useCommentsStore(
     (s) => s.comments.filter((c) => c.postId === post.id).length,
@@ -567,10 +548,12 @@ export function PostCard({ post }: PostCardProps) {
     }
   }, [post.id, incrementViews]);
 
-  const displayName =
-    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-    "Диса Бендер";
-  const voterId = username.trim().toLowerCase() || displayName.toLowerCase();
+  const myDisplayName = currentUserDisplayName(firstName, lastName, username);
+  const myUsername = currentUserHandle(username);
+  const authorDisplayName = post.isOwn ? myDisplayName : post.author.name;
+  const authorUsername = post.isOwn ? myUsername : post.author.username;
+  const authorAvatarUrl = post.isOwn ? avatarObjectUrl : post.author.avatarUrl;
+  const voterId = myUsername.toLowerCase();
   const pollEnabledSettings = post.poll
     ? [
         post.poll.anonymous ? "Анонимный опрос" : null,
@@ -635,8 +618,8 @@ export function PostCard({ post }: PostCardProps) {
         open={commentsOpen}
         postId={post.id}
         post={post}
-        postAuthorName={displayName}
-        postAuthorAvatar={avatarObjectUrl}
+        postAuthorName={authorDisplayName}
+        postAuthorAvatar={authorAvatarUrl}
         onClose={closePostQuery}
       />
 
@@ -695,7 +678,7 @@ export function PostCard({ post }: PostCardProps) {
                           setVotersListOpen(false);
                           setSelectedPollOptionId(null);
                           setVotersSearch("");
-                          setScreen("profile");
+                          openProfile({ username: vote.username, displayName: vote.name });
                         }}
                       >
                         <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card-2 text-xs text-theme-text">
@@ -755,7 +738,7 @@ export function PostCard({ post }: PostCardProps) {
                                 setVotersListOpen(false);
                                 setSelectedPollOptionId(null);
                                 setVotersSearch("");
-                                setScreen("profile");
+                                openProfile({ username: vote.username, displayName: vote.name });
                               }}
                             >
                               {vote.avatarUrl ? (
@@ -832,30 +815,30 @@ export function PostCard({ post }: PostCardProps) {
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <ProfileLink
+          username={authorUsername}
+          displayName={authorDisplayName}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-ds-focus)]"
+        >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-theme-border bg-theme-card text-lg text-theme-text transition-transform duration-200 hover:scale-105 active:scale-95">
-            {avatarObjectUrl ? (
+            {authorAvatarUrl ? (
               <img
-                src={avatarObjectUrl}
+                src={authorAvatarUrl}
                 alt=""
                 className="h-full w-full object-cover"
               />
             ) : (
-              <span aria-hidden>{getAvatarFallback(displayName)}</span>
+              <span aria-hidden>{getAvatarFallback(authorDisplayName)}</span>
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold leading-snug text-theme-text">
-              {displayName}
-            </p>
-            <p className="text-xs text-theme-text-2">
-              <span>{formatPostTime(post.createdAt)}</span>
-              {post.editedAt != null ? (
-                <span className="ml-1.5 text-theme-text-2">· ред.</span>
-              ) : null}
-            </p>
+            <PostAuthorMeta
+              displayName={authorDisplayName}
+              createdAt={post.createdAt}
+              editedAt={post.editedAt}
+            />
           </div>
-        </div>
+        </ProfileLink>
         <div ref={menuRef} className="relative shrink-0">
           <button
             type="button"
@@ -877,6 +860,8 @@ export function PostCard({ post }: PostCardProps) {
               aria-orientation="vertical"
               style={{ animation: "aegis-menu-in 0.15s cubic-bezier(0.22,1,0.36,1)" }}
             >
+          {post.isOwn ? (
+            <>
               <button
                 type="button"
                 role="menuitem"
@@ -894,14 +879,16 @@ export function PostCard({ post }: PostCardProps) {
                 Удалить пост
               </button>
               <div className="my-0.5 h-px bg-theme-border" aria-hidden />
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full px-4 py-2.5 text-left text-sm text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:bg-theme-active active:scale-[0.98]"
-                onClick={handleReport}
-              >
-                Пожаловаться
-              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full px-4 py-2.5 text-left text-sm text-theme-text-2 transition-all duration-150 hover:bg-theme-hover active:bg-theme-active active:scale-[0.98]"
+            onClick={handleReport}
+          >
+            Пожаловаться
+          </button>
             </div>
           ) : null}
         </div>
@@ -966,7 +953,7 @@ export function PostCard({ post }: PostCardProps) {
                       onClick={() =>
                         voteInPoll(post.id, opt.id, {
                           voterId,
-                          name: displayName,
+                          name: myDisplayName,
                           username,
                           avatarUrl: avatarObjectUrl ?? null,
                         })
@@ -1078,7 +1065,12 @@ export function PostCard({ post }: PostCardProps) {
             )}
             aria-label="Репост"
             onClick={() => {
-              setRepostPayload(buildRepostForwardPayload(post, displayName));
+              setRepostPayload(
+                buildRepostForwardPayload(
+                  post,
+                  `${authorDisplayName} · @${authorUsername}`,
+                ),
+              );
               setRepostModalOpen(true);
             }}
           >

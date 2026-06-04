@@ -1,0 +1,17 @@
+# Локальный PostgreSQL для Aegis (`pnpm db:push` из корня).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegis-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aegis
+    # Избегаем 5432 на хосте: часто занят установленным Windows PostgreSQL (тогда db push даёт P1000).
+    ports:
+      - "5433:5432"
+    volumes:
+      - aegis_pgdata:/var/lib/postgresql/data
+
+volumes:
+  aegis_pgdata:

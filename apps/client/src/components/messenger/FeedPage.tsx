@@ -1,6 +1,8 @@
 import { PostCard } from "@/components/messenger/PostCard";
 import { PostComposer } from "@/components/messenger/PostComposer";
 import { cn } from "@/lib/utils";
+import { authorSubscriptionKey } from "@/stores/author-subscriptions-store";
+import { useAuthorSubscriptionsStore } from "@/stores/author-subscriptions-store";
 import { usePostsStore } from "@/stores/posts-store";
 import { useRef, useState } from "react";
 
@@ -13,6 +15,7 @@ type FeedTab = "foryou" | "subscriptions";
 
 export function FeedPage() {
   const posts = usePostsStore((s) => s.posts);
+  const subscribedKeys = useAuthorSubscriptionsStore((s) => s.subscribedKeys);
   const [feedTab, setFeedTab] = useState<FeedTab>("foryou");
 
   const initialPostIds = useRef<Set<string> | null>(null);
@@ -20,7 +23,12 @@ export function FeedPage() {
     initialPostIds.current = new Set(posts.map((p) => p.id));
   }
 
-  const showPosts = feedTab === "foryou" ? posts : [];
+  const showPosts =
+    feedTab === "foryou"
+      ? posts
+      : posts.filter(
+          (p) => subscribedKeys[authorSubscriptionKey(p.author.name)],
+        );
   const emptySubscriptions =
     feedTab === "subscriptions" && showPosts.length === 0;
 

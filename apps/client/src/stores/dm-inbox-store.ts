@@ -1,8 +1,20 @@
+import {
+  DEMO_SEED_CHATS,
+  DEMO_SEED_MESSAGES,
+  demoEmployeeDmChatSeed,
+} from "@/data/demo-seed";
+import { isDmChatUnlocked } from "@/lib/social-graph";
+import { useAuthorSubscriptionsStore } from "@/stores/author-subscriptions-store";
+import { useProfileStore } from "@/stores/profile-store";
 import { create } from "zustand";
 
 /** Совпадает с прежними типами в MessagesPage — общее хранилище списка чатов и сообщений. */
 export type InboxChatItem = {
   id: string;
+  /** ID чата из API для DM (Prisma Chat.id); без него недоступен серверный сигналинг звонков. */
+  backendChatId?: string;
+  /** id собеседника в API */
+  peerUserId?: string;
   name: string;
   handle: string;
   lastMessage: string;
@@ -59,92 +71,28 @@ function newMessageId() {
   return `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const INITIAL_CHATS: InboxChatItem[] = [
-  {
-    id: "c-1",
-    name: "Анна Петрова",
-    handle: "ann_pet",
-    lastMessage: "Отправила макет карточек, посмотри пожалуйста",
-    lastAt: "21:14",
-    unread: 2,
-    presence: "online",
-  },
-  {
-    id: "c-2",
-    name: "Design Team",
-    handle: "aegis_design",
-    lastMessage: "Новая иконка репоста уже в папке design",
-    lastAt: "20:58",
-    unread: 0,
-    presence: "dnd",
-  },
-  {
-    id: "c-3",
-    name: "Максим",
-    handle: "max_dev",
-    lastMessage: "Ок, после релиза подчищу store",
-    lastAt: "18:06",
-    unread: 0,
-    presence: "offline",
-  },
-  {
-    id: "c-4",
-    name: "QA Squad",
-    handle: "qa_team",
-    lastMessage: "Проверили мобильный таббар, все ок",
-    lastAt: "вчера",
-    unread: 7,
-    presence: "online",
-  },
-];
-
-const INITIAL_MESSAGES: Record<string, InboxMessageItem[]> = {
-  "c-1": [
-    { id: "m-1", fromMe: false, text: "Привет! Ты на месте?", time: "20:54" },
-    {
-      id: "m-2",
-      fromMe: true,
-      text: "Да, смотрю задачи по мессенджеру.",
-      time: "20:56",
-      status: "read",
-    },
-    {
-      id: "m-3",
-      fromMe: false,
-      text: "Отправила макет карточек, посмотри пожалуйста",
-      time: "21:14",
-    },
-  ],
-  "c-2": [
-    { id: "m-4", fromMe: false, text: "Новая иконка репоста уже в папке design", time: "20:58" },
-    {
-      id: "m-5",
-      fromMe: true,
-      text: "Отлично, сейчас подключу.",
-      time: "21:01",
-      status: "delivered",
-    },
-  ],
-  "c-3": [
-    {
-      id: "m-6",
-      fromMe: true,
-      text: "Прогоню фиксы и вернусь к тебе",
-      time: "17:51",
-      status: "sent",
-    },
-    { id: "m-7", fromMe: false, text: "Ок, после релиза подчищу store", time: "18:06" },
-  ],
-  "c-4": [{ id: "m-8", fromMe: false, text: "Проверили мобильный таббар, все ок", time: "вчера" }],
-};
-
 type InboxState = {
   chats: InboxChatItem[];
   messagesByChat: Record<string, InboxMessageItem[]>;
-  patchChatPreview: (chatId: string, lastMessage: string, lastAt: string) => void;
+  typingByChatId: Record<string, true>;
+  pendingOpenChatId: string | null;
+  patchChatPreview: (
+    chatId: string,
+    lastMessage: string,
+    lastAt: string,
+    incrementUnread?: boolean,
+  ) => void;
+  markChatRead: (chatId: string) => void;
+  requestOpenChat: (chatId: string) => void;
+  consumePendingOpenChat: () => string | null;
+  setChatTyping: (chatId: string, typing: boolean) => void;
   appendOutgoingMessage: (
     chatId: string,
     body: Omit<InboxMessageItem, "id"> & { id?: string },
+  ) => void;
+  appendIncomingMessage: (
+    chatId: string,
+    body: Omit<InboxMessageItem, "id" | "fromMe"> & { id?: string },
   ) => void;
   clearChatMessages: (chatId: string) => void;
   removeChat: (chatId: string) => void;
@@ -162,13 +110,23 @@ type InboxState = {
       pollPreview?: InboxPollPreview;
     },
   ) => void;
+  /** Добавляет личный чат с сотрудником после взаимной подписки. */
+  ensureEmployeeDmChat: (employeeUsername: string) => string | null;
 };
 
-export const useDmInboxStore = create<InboxState>((set, get) => ({
-  chats: INITIAL_CHATS,
-  messagesByChat: INITIAL_MESSAGES,
+function triggerDemoPeerReply(chatId: string) {
+  void import("@/lib/demo-dm-auto-reply").then((m) => {
+    m.scheduleDemoPeerAutoReply(chatId);
+  });
+}
 
-  patchChatPreview(chatId, lastMessage, lastAt) {
+export const useDmInboxStore = create<InboxState>((set, get) => ({
+  chats: DEMO_SEED_CHATS,
+  messagesByChat: DEMO_SEED_MESSAGES,
+  typingByChatId: {},
+  pendingOpenChatId: null,
+
+  patchChatPreview(chatId, lastMessage, lastAt, incrementUnread = false) {
     set((s) => ({
       chats: s.chats.map((c) =>
         c.id !== chatId
@@ -177,10 +135,48 @@ export const useDmInboxStore = create<InboxState>((set, get) => ({
               ...c,
               lastMessage,
               lastAt,
+              unread: incrementUnread ? c.unread + 1 : 0,
+            },
+      ),
+    }));
+  },
+
+  markChatRead(chatId) {
+    set((s) => ({
+      chats: s.chats.map((c) =>
+        c.id !== chatId
+          ? c
+          : {
+              ...c,
               unread: 0,
             },
       ),
     }));
+  },
+
+  requestOpenChat(chatId) {
+    set({ pendingOpenChatId: chatId });
+  },
+
+  consumePendingOpenChat() {
+    const chatId = get().pendingOpenChatId;
+    if (!chatId) {
+      return null;
+    }
+    set({ pendingOpenChatId: null });
+    return chatId;
+  },
+
+  setChatTyping(chatId, typing) {
+    set((s) => {
+      const next = { ...s.typingByChatId };
+      if (typing) {
+        next[chatId] = true;
+      } else {
+        delete next[chatId];
+      }
+      return { typingByChatId: next };
+    });
   },
 
   appendOutgoingMessage(chatId, body) {
@@ -193,20 +189,39 @@ export const useDmInboxStore = create<InboxState>((set, get) => ({
         [chatId]: [...(s.messagesByChat[chatId] ?? []), message],
       },
     }));
+    triggerDemoPeerReply(chatId);
+  },
+
+  appendIncomingMessage(chatId, body) {
+    const id = body.id ?? newMessageId();
+    const { id: _omit, ...rest } = body;
+    const message: InboxMessageItem = { ...rest, id, fromMe: false };
+    set((s) => ({
+      messagesByChat: {
+        ...s.messagesByChat,
+        [chatId]: [...(s.messagesByChat[chatId] ?? []), message],
+      },
+    }));
   },
 
   clearChatMessages(chatId) {
-    set((s) => ({
-      messagesByChat: { ...s.messagesByChat, [chatId]: [] },
-    }));
+    set((s) => {
+      const { [chatId]: _typing, ...typingRest } = s.typingByChatId;
+      return {
+        messagesByChat: { ...s.messagesByChat, [chatId]: [] },
+        typingByChatId: typingRest,
+      };
+    });
   },
 
   removeChat(chatId) {
     set((s) => {
       const { [chatId]: _, ...rest } = s.messagesByChat;
+      const { [chatId]: __, ...typingRest } = s.typingByChatId;
       return {
         chats: s.chats.filter((c) => c.id !== chatId),
         messagesByChat: rest,
+        typingByChatId: typingRest,
       };
     });
   },
@@ -271,4 +286,39 @@ export const useDmInboxStore = create<InboxState>((set, get) => ({
     });
     get().patchChatPreview(chatId, preview, time);
   },
+
+  ensureEmployeeDmChat(employeeUsername) {
+    const seed = demoEmployeeDmChatSeed(employeeUsername);
+    if (!seed) {
+      return null;
+    }
+    const existing = get().chats.find(
+      (c) => c.id === seed.id || c.handle === seed.handle,
+    );
+    if (existing) {
+      return existing.id;
+    }
+    set((s) => ({
+      chats: [...s.chats, seed],
+      messagesByChat: {
+        ...s.messagesByChat,
+        [seed.id]: s.messagesByChat[seed.id] ?? [],
+      },
+    }));
+    return seed.id;
+  },
 }));
+
+export function useUnreadMessagesCount() {
+  const chats = useDmInboxStore((s) => s.chats);
+  const messagesByChat = useDmInboxStore((s) => s.messagesByChat);
+  const username = useProfileStore((s) => s.username);
+  const subscribedKeys = useAuthorSubscriptionsStore((s) => s.subscribedKeys);
+  return chats
+    .filter((chat) =>
+      isDmChatUnlocked(chat, username, subscribedKeys, {
+        messageCount: (messagesByChat[chat.id] ?? []).length,
+      }),
+    )
+    .reduce((total, chat) => total + chat.unread, 0);
+}

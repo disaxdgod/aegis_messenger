@@ -5,11 +5,14 @@ import {
   IconSearch,
   IconUser,
 } from "@/components/messenger/nav-icons";
+import { NavCountBadge } from "@/components/messenger/NavCountBadge";
 import { cn } from "@/lib/utils";
 import {
   useAppNavStore,
   type AppMainScreen,
 } from "@/stores/app-nav-store";
+import { useUnreadAlertsCount } from "@/stores/demo-notification-store";
+import { useUnreadMessagesCount } from "@/stores/dm-inbox-store";
 import { type ReactNode } from "react";
 
 const TABS = [
@@ -40,8 +43,15 @@ function tabIcon(id: TabId): ReactNode {
   }
 }
 
-/** Демо-счётчик уведомлений (позже — из стора). */
-const ALERT_COUNT = 0;
+function tabBadgeCount(id: TabId, messagesCount: number, alertsCount: number) {
+  if (id === "messages") {
+    return messagesCount;
+  }
+  if (id === "alerts") {
+    return alertsCount;
+  }
+  return 0;
+}
 
 function screenToTab(screen: AppMainScreen): TabId {
   switch (screen) {
@@ -63,6 +73,8 @@ function screenToTab(screen: AppMainScreen): TabId {
 export function MobileNav() {
   const screen = useAppNavStore((s) => s.screen);
   const setScreen = useAppNavStore((s) => s.setScreen);
+  const alertCount = useUnreadAlertsCount();
+  const messagesCount = useUnreadMessagesCount();
   const active = screenToTab(screen);
 
   return (
@@ -72,7 +84,9 @@ export function MobileNav() {
     >
       <div className="itd-mnav-bar">
         <div className="itd-mnav-track">
-          {TABS.map((tab) => (
+          {TABS.map((tab) => {
+            const badgeCount = tabBadgeCount(tab.id, messagesCount, alertCount);
+            return (
             <button
               key={tab.id}
               type="button"
@@ -105,15 +119,12 @@ export function MobileNav() {
             >
               <span className="itd-mnav-event-inner">
                 {tabIcon(tab.id)}
-                {tab.id === "alerts" && ALERT_COUNT > 0 ? (
-                  <span className="itd-mnav-badge">
-                    {ALERT_COUNT > 99 ? "99+" : ALERT_COUNT}
-                  </span>
-                ) : null}
+                <NavCountBadge count={badgeCount} overlay />
               </span>
               <span className="itd-mnav-tab-label">{tab.label}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

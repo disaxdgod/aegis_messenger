@@ -123,9 +123,11 @@ export function SendMediaAttachmentModal({
     return null;
   }
 
+  const selectedFile = file;
+
   async function submit() {
     await onSend({
-      file,
+      file: selectedFile,
       asDocument: isMedia ? asDocument : true,
       caption,
     });

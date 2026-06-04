@@ -1,5 +1,10 @@
 import { normalizeHashtagKey } from "@/lib/hashtags";
+import {
+  normalizeProfileUsername,
+  resolveProfileUsername,
+} from "@/lib/profile-directory";
 import { usePostCommentsRouteStore } from "@/stores/post-comments-route-store";
+import { useProfileStore } from "@/stores/profile-store";
 import { create } from "zustand";
 
 export type AppMainScreen =
@@ -10,30 +15,51 @@ export type AppMainScreen =
   | "messages"
   | "alerts";
 
-type ParsedRoute =
-  | { screen: Exclude<AppMainScreen, "hashtag-feed"> }
-  | { screen: "hashtag-feed"; hashtag: string };
+type ParsedRoute = {
+  screen: AppMainScreen;
+  hashtag?: string;
+  /** `null` — свой профиль (`/profile`); строка — чужой (`/profile/{username}`). */
+  profileUsername?: string | null;
+};
+
+export type OpenProfileInput =
+  | string
+  | null
+  | undefined
+  | {
+      username?: string | null;
+      displayName?: string | null;
+    };
 
 type AppNavState = {
   screen: AppMainScreen;
-  /** Ключ хештега в нижнем регистре, без `#`. */
   activeHashtagKey: string | null;
-  /** Как показывать в заголовке (сохраняем регистр ввода / клика). */
   activeHashtagDisplay: string | null;
-  /** Куда вернуться по «Назад» из ленты хештега. */
   hashtagBackTarget: AppMainScreen | null;
+  /** Чей профиль открыт; `null` — текущий пользователь. */
+  profileViewUsername: string | null;
   setScreen: (screen: AppMainScreen) => void;
+  openProfile: (input?: OpenProfileInput) => void;
   openHashtagFeed: (rawTag: string, from?: AppMainScreen) => void;
   closeHashtagFeed: () => void;
   applyRouteFromLocation: () => void;
-  /** Лента + `?post=` (модалка комментариев), например из «Открыть пост» в ЛС. */
   navigateToFeedWithPostComments: (postSeq: number) => void;
 };
 
-function screenToPath(screen: Exclude<AppMainScreen, "hashtag-feed">): string {
+function profilePath(username: string | null): string {
+  if (!username) {
+    return "/profile";
+  }
+  return `/profile/${encodeURIComponent(username)}`;
+}
+
+function screenToPath(
+  screen: Exclude<AppMainScreen, "hashtag-feed">,
+  profileUsername: string | null = null,
+): string {
   switch (screen) {
     case "profile":
-      return "/profile";
+      return profilePath(profileUsername);
     case "search":
       return "/search";
     case "feed":
@@ -52,7 +78,10 @@ function parseRoute(pathname: string): ParsedRoute {
   const parts = normalized.split("/").filter(Boolean);
 
   if (parts[0] === "hashtag" && parts[1]) {
-    return { screen: "hashtag-feed", hashtag: decodeURIComponent(parts[1]) };
+    return {
+      screen: "hashtag-feed",
+      hashtag: decodeURIComponent(parts[1]),
+    };
   }
   if (parts[0] === "search") {
     return { screen: "search" };
@@ -66,7 +95,14 @@ function parseRoute(pathname: string): ParsedRoute {
   if (parts[0] === "alerts") {
     return { screen: "alerts" };
   }
-  return { screen: "profile" };
+  if (parts[0] === "profile") {
+    const rawUser = parts[1] ? decodeURIComponent(parts[1]) : null;
+    return {
+      screen: "profile",
+      profileUsername: rawUser ? normalizeProfileUsername(rawUser) : null,
+    };
+  }
+  return { screen: "profile", profileUsername: null };
 }
 
 function pushPath(pathname: string, replace = false) {
@@ -91,11 +127,33 @@ function pushPath(pathname: string, replace = false) {
   usePostCommentsRouteStore.getState().syncFromLocation();
 }
 
+function resolveOpenProfileTarget(input?: OpenProfileInput): string | null {
+  if (input == null) {
+    return null;
+  }
+  if (typeof input === "string") {
+    return resolveProfileUsername({ username: input });
+  }
+  return resolveProfileUsername(input);
+}
+
+function isOwnProfileUsername(target: string | null): boolean {
+  const self = normalizeProfileUsername(useProfileStore.getState().username);
+  if (!target) {
+    return true;
+  }
+  if (!self) {
+    return false;
+  }
+  return target === self;
+}
+
 export const useAppNavStore = create<AppNavState>((set, get) => ({
   screen: "profile",
   activeHashtagKey: null,
   activeHashtagDisplay: null,
   hashtagBackTarget: null,
+  profileViewUsername: null,
 
   setScreen: (screen) => {
     if (screen === "hashtag-feed") {
@@ -107,6 +165,21 @@ export const useAppNavStore = create<AppNavState>((set, get) => ({
       activeHashtagKey: null,
       activeHashtagDisplay: null,
       hashtagBackTarget: null,
+      profileViewUsername: null,
+    });
+  },
+
+  openProfile: (input) => {
+    const target = resolveOpenProfileTarget(input);
+    const own = isOwnProfileUsername(target);
+    const viewUsername = own ? null : target;
+    pushPath(profilePath(viewUsername));
+    set({
+      screen: "profile",
+      activeHashtagKey: null,
+      activeHashtagDisplay: null,
+      hashtagBackTarget: null,
+      profileViewUsername: viewUsername,
     });
   },
 
@@ -127,17 +200,21 @@ export const useAppNavStore = create<AppNavState>((set, get) => ({
       activeHashtagKey: key,
       activeHashtagDisplay: stripped,
       hashtagBackTarget: back,
+      profileViewUsername: null,
     });
   },
 
   closeHashtagFeed: () => {
-    const target = get().hashtagBackTarget ?? "search";
-    pushPath(screenToPath(target));
+    const raw = get().hashtagBackTarget ?? "search";
+    const pathScreen: Exclude<AppMainScreen, "hashtag-feed"> =
+      raw === "hashtag-feed" ? "search" : raw;
+    pushPath(screenToPath(pathScreen));
     set({
-      screen: target,
+      screen: pathScreen,
       activeHashtagKey: null,
       activeHashtagDisplay: null,
       hashtagBackTarget: null,
+      profileViewUsername: null,
     });
   },
 
@@ -147,16 +224,17 @@ export const useAppNavStore = create<AppNavState>((set, get) => ({
     }
     const route = parseRoute(window.location.pathname);
 
-    if (route.screen === "hashtag-feed") {
+    if (route.screen === "hashtag-feed" && route.hashtag) {
       const key = normalizeHashtagKey(route.hashtag);
       set((s) => ({
         screen: "hashtag-feed",
         activeHashtagKey: key,
-        activeHashtagDisplay: route.hashtag,
+        activeHashtagDisplay: route.hashtag ?? null,
         hashtagBackTarget:
           s.screen === "hashtag-feed"
             ? (s.hashtagBackTarget ?? "search")
             : s.screen,
+        profileViewUsername: null,
       }));
       return;
     }
@@ -166,6 +244,8 @@ export const useAppNavStore = create<AppNavState>((set, get) => ({
       activeHashtagKey: null,
       activeHashtagDisplay: null,
       hashtagBackTarget: null,
+      profileViewUsername:
+        route.screen === "profile" ? (route.profileUsername ?? null) : null,
     });
   },
 
@@ -183,6 +263,7 @@ export const useAppNavStore = create<AppNavState>((set, get) => ({
       activeHashtagKey: null,
       activeHashtagDisplay: null,
       hashtagBackTarget: null,
+      profileViewUsername: null,
     });
     usePostCommentsRouteStore.getState().syncFromLocation();
   },

@@ -8,6 +8,7 @@ import { MarkdownEmojiText } from "@/components/messenger/MarkdownEmojiText";
 import { createClientId } from "@/lib/create-client-id";
 import type { SelectionSnapshot } from "@/lib/markdown-selection";
 import { cn } from "@/lib/utils";
+import { currentUserDisplayName, currentUserHandle } from "@/lib/current-user-display";
 import type { PostMediaItem, PostPollData } from "@/stores/posts-store";
 import { usePostsStore } from "@/stores/posts-store";
 import { useProfileStore } from "@/stores/profile-store";
@@ -30,10 +31,10 @@ export function PostComposer({ className, style }: PostComposerProps) {
   const avatarObjectUrl = useProfileStore((s) => s.avatarObjectUrl);
   const firstName = useProfileStore((s) => s.firstName);
   const lastName = useProfileStore((s) => s.lastName);
+  const username = useProfileStore((s) => s.username);
   const addPost = usePostsStore((s) => s.addPost);
-  const displayName =
-    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
-    "Диса Бендер";
+  const displayName = currentUserDisplayName(firstName, lastName, username);
+  const handle = currentUserHandle(username);
 
   const [text, setText] = useState("");
   const [media, setMedia] = useState<PostMediaItem[]>([]);
@@ -112,7 +113,17 @@ export function PostComposer({ className, style }: PostComposerProps) {
 
   function publish() {
     if (!canPublish) return;
-    addPost({ text: text.trim(), media, poll });
+    addPost({
+      text: text.trim(),
+      media,
+      poll,
+      author: {
+        name: displayName,
+        username: handle,
+        avatarUrl: avatarObjectUrl,
+      },
+      isOwn: true,
+    });
     setText("");
     setMedia([]);
     setPoll(null);
